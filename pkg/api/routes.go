@@ -38,6 +38,7 @@ import (
 	"zotregistry.dev/zot/v2/pkg/api/constants"
 	apiErr "zotregistry.dev/zot/v2/pkg/api/errors"
 	zcommon "zotregistry.dev/zot/v2/pkg/common"
+	"zotregistry.dev/zot/v2/pkg/compat"
 	gqlPlayground "zotregistry.dev/zot/v2/pkg/debug/gqlplayground"
 	"zotregistry.dev/zot/v2/pkg/debug/pprof"
 	debug "zotregistry.dev/zot/v2/pkg/debug/swagger"
@@ -691,6 +692,63 @@ func (rh *RouteHandler) GetReferrers(response http.ResponseWriter, request *http
 	zcommon.WriteData(response, http.StatusOK, ispec.MediaTypeImageIndex, out)
 }
 
+// rejectUnsignedManifest reports whether a manifest push must be rejected
+// under the signedOnly imageTrust policy. It applies only when the push
+// creates a tag: either the reference is a tag, or a digest push carries
+// tag= query params. Signature and referrer artifacts are exempt so that
+// push-by-digest then sign then tag workflows keep working.
+func (rh *RouteHandler) rejectUnsignedManifest(ctx context.Context, name, reference, mediaType string,
+	body []byte, createsTags bool,
+) bool {
+	if !rh.c.Config.Extensions.IsSignedOnlyPushEnabled() || rh.c.MetaDB == nil {
+		return false
+	}
+
+	if zcommon.IsDigest(reference) && !createsTags {
+		return false
+	}
+
+	// signature and sbom artifacts pushed under the cosign sha256-<digest>.sig
+	// and sha256-<digest>.sbom tag patterns are exempt
+	if zcommon.IsCosignTag(reference) {
+		return false
+	}
+
+	if !compat.IsImageManifestMediaType(mediaType) && !compat.IsImageIndexMediaType(mediaType) {
+		return false
+	}
+
+	// referrer artifacts (signatures, attestations, sboms) carry a subject
+	// descriptor and are not deployable images
+	var content struct {
+		Subject *ispec.Descriptor `json:"subject"`
+	}
+	if err := json.Unmarshal(body, &content); err != nil {
+		return false
+	} else if content.Subject != nil {
+		return false
+	}
+
+	repoMeta, err := rh.c.MetaDB.GetRepoMeta(ctx, name)
+	if err != nil {
+		rh.c.Log.Error().Err(err).Str("repository", name).Msg("failed to check manifest signatures")
+
+		return true
+	}
+
+	for _, sigs := range repoMeta.Signatures[godigest.FromBytes(body).String()] {
+		for _, sigInfo := range sigs {
+			for _, layerInfo := range sigInfo.LayersInfo {
+				if layerInfo.Signer != "" {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
+}
+
 // UpdateManifest godoc
 // @Summary Update image manifest
 // @Description Update an image's manifest given a reference or a digest. On digest pushes with `tag=` query
@@ -797,6 +855,15 @@ func (rh *RouteHandler) UpdateManifest(response http.ResponseWriter, request *ht
 	}
 
 	ctx := events.WithEventContext(request.Context(), eventContextFromRequest(request))
+
+	if rh.rejectUnsignedManifest(ctx, name, reference, mediaType, body, len(digestQueryTags) > 0) {
+		e := apiErr.NewError(apiErr.DENIED).AddDetail(map[string]string{
+			"reason": "unsigned manifest: push the image by digest, sign it, then push the tag",
+		})
+		zcommon.WriteJSON(response, http.StatusForbidden, apiErr.NewErrorList(e))
+
+		return
+	}
 
 	digest, subjectDigest, err := imgStore.PutImageManifest(ctx, name, reference, mediaType, body, digestQueryTags)
 	if err != nil {

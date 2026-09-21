@@ -15830,3 +15830,96 @@ func TestDockerClientV2ChallengeWorkaround(t *testing.T) {
 		})
 	})
 }
+
+func TestSignedOnlyPushEnforcement(t *testing.T) {
+	Convey("signedOnly rejects tag pushes for unsigned manifests", t, func(c C) {
+		conf := config.New()
+		conf.HTTP.Port = "0"
+		conf.Log.Output = test.MakeTempFilePath(t, "zot-log.txt")
+
+		defaultVal := true
+
+		conf.Extensions = &extconf.ExtensionConfig{
+			Search: &extconf.SearchConfig{Enable: &defaultVal},
+			Trust: &extconf.ImageTrustConfig{
+				BaseConfig: extconf.BaseConfig{Enable: &defaultVal},
+				Cosign:     true,
+				SignedOnly: true,
+			},
+		}
+
+		dir := t.TempDir()
+		ctlr := makeController(conf, dir)
+		cm := test.NewControllerManager(ctlr)
+		baseURL := cm.StartAndWait()
+		port := strconv.Itoa(cm.Port())
+
+		defer cm.StopServer()
+
+		repoName := "signed-only"
+		img := CreateRandomImage()
+		content := img.ManifestDescriptor.Data
+		digest := img.ManifestDescriptor.Digest
+
+		// tagged pushes of unsigned manifests are rejected
+		resp, err := resty.R().
+			SetHeader("Content-Type", ispec.MediaTypeImageManifest).
+			SetBody(content).
+			Put(baseURL + fmt.Sprintf("/v2/%s/manifests/1.0", repoName))
+		So(err, ShouldBeNil)
+		So(resp.StatusCode(), ShouldEqual, http.StatusForbidden)
+
+		// digest pushes stay allowed so the manifest can be signed first
+		err = UploadImage(img, baseURL, repoName, digest.String())
+		So(err, ShouldBeNil)
+
+		// digest pushes carrying tag= params create tags and are rejected too
+		resp, err = resty.R().
+			SetHeader("Content-Type", ispec.MediaTypeImageManifest).
+			SetBody(content).
+			SetQueryParam("tag", "sneaky").
+			Put(baseURL + fmt.Sprintf("/v2/%s/manifests/%s", repoName, digest.String()))
+		So(err, ShouldBeNil)
+		So(resp.StatusCode(), ShouldEqual, http.StatusForbidden)
+
+		cwd, err := os.Getwd()
+		So(err, ShouldBeNil)
+
+		defer func() { _ = os.Chdir(cwd) }()
+
+		tdir := t.TempDir()
+		_ = os.Chdir(tdir)
+
+		os.Setenv("COSIGN_PASSWORD", "")
+
+		err = generate.GenerateKeyPairCmd(context.TODO(), "", "cosign", nil)
+		So(err, ShouldBeNil)
+
+		// install the public key into the trust store
+		pubKey, err := os.ReadFile(path.Join(tdir, "cosign.pub"))
+		So(err, ShouldBeNil)
+
+		cosignDir := path.Join(dir, "_cosign")
+		So(os.MkdirAll(cosignDir, 0o755), ShouldBeNil)
+		So(os.WriteFile(path.Join(cosignDir, "cosign.pub"), pubKey, 0o644), ShouldBeNil)
+
+		// sign the pushed digest; the signature push itself is exempt
+		err = sign.SignCmd(context.TODO(),
+			&options.RootOptions{Verbose: true, Timeout: 1 * time.Minute},
+			options.KeyOpts{KeyRef: path.Join(tdir, "cosign.key"), PassFunc: generate.GetPass},
+			options.SignOptions{
+				Registry: options.RegistryOptions{AllowInsecure: true},
+				Upload:   true,
+			},
+			[]string{fmt.Sprintf("localhost:%s/%s@%s", port, repoName, digest.String())})
+		So(err, ShouldBeNil)
+
+		// the digest now carries a trusted signature, so tagging is allowed
+		resp, err = resty.R().
+			SetHeader("Content-Type", ispec.MediaTypeImageManifest).
+			SetBody(content).
+			Put(baseURL + fmt.Sprintf("/v2/%s/manifests/1.0", repoName))
+		So(err, ShouldBeNil)
+		So(resp.StatusCode(), ShouldEqual, http.StatusCreated)
+	})
+}

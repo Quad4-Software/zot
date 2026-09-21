@@ -31,6 +31,12 @@ type ImageTrustConfig struct {
 
 	Cosign   bool
 	Notation bool
+
+	// SignedOnly rejects manifest pushes that create tags for digests without
+	// a trusted signature. Signatures are stored as referrer artifacts, so the
+	// required push order is: push the image by digest, sign it, then push the
+	// tag. Signature and referrer artifacts are exempt.
+	SignedOnly bool
 }
 
 type APIKeyConfig struct {
@@ -210,6 +216,16 @@ func (e *ExtensionConfig) IsNotationEnabled() bool {
 	}
 
 	return e.Trust != nil && e.Trust.Enable != nil && *e.Trust.Enable && e.Trust.Notation
+}
+
+// IsSignedOnlyPushEnabled checks if pushes creating tags must reference
+// manifests that already carry a trusted signature.
+func (e *ExtensionConfig) IsSignedOnlyPushEnabled() bool {
+	if e == nil {
+		return false
+	}
+
+	return e.IsImageTrustEnabled() && e.Trust.SignedOnly
 }
 
 // IsImageTrustEnabled checks if image trust is enabled in this extensions config.
