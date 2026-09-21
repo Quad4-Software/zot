@@ -1,49 +1,33 @@
 # ---
-# Global ARGs for FROM statements
-# This needs to be declared in the global scope otherwise the build will fail in Docker & Podman.
-# Docker:
-#   WARNING: UndefinedArgInFrom - https://docs.docker.com/go/dockerfile/rule/undefined-arg-in-from/
-#   FROM argument 'BASE_IMAGE' is not declared
-# Podman: Error: determining starting point for build: no FROM statement found
+# Packages a prebuilt zot binary (make binary GOOS=linux GOARCH=<arch>) into a
+# distroless static image. OCI labels are set from build args so CI can stamp
+# version, revision and build time at publish.
 # ---
-ARG BASE_IMAGE=gcr.io/distroless/base-nossl-debian13:latest
+ARG BASE_IMAGE=gcr.io/distroless/static-debian13:latest
 
-# ---
-# Stage 1: Install certs, build binary, create default config file
-# ---
-FROM --platform=$BUILDPLATFORM ghcr.io/project-zot/golang:1.27 AS builder
+FROM $BASE_IMAGE
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG COMMIT
 
-RUN mkdir -p /go/src/github.com/project-zot/zot
-WORKDIR /go/src/github.com/project-zot/zot
-COPY . .
-RUN make COMMIT=$COMMIT OS=$TARGETOS ARCH=$TARGETARCH clean binary
-RUN echo '{\n\
-    "storage": {\n\
-        "rootDirectory": "/var/lib/registry"\n\
-    },\n\
-    "http": {\n\
-        "address": "0.0.0.0",\n\
-        "port": "5000",\n\
-        "compat": ["docker2s2"]\n\
-    },\n\
-    "log": {\n\
-        "level": "debug"\n\
-    }\n\
-}\n' > config.json && cat config.json
+ARG VERSION=dev
+ARG REVISION=""
+ARG CREATED=""
+ARG SOURCE="https://github.com/Quad4-Software/zot"
 
-# ---
-# Stage 2: Final image with nothing but certs, binary, and default config file
-# ---
-FROM $BASE_IMAGE AS final
-ARG TARGETOS
-ARG TARGETARCH
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder /go/src/github.com/project-zot/zot/bin/zot-$TARGETOS-$TARGETARCH /usr/bin/zot
-COPY --from=builder /go/src/github.com/project-zot/zot/config.json /etc/zot/config.json
-ENTRYPOINT ["/usr/bin/zot"]
+LABEL org.opencontainers.image.title="quad4-zot" \
+      org.opencontainers.image.description="Quad4's OCI registry, a zot fork" \
+      org.opencontainers.image.vendor="Quad4" \
+      org.opencontainers.image.url="https://quad4.io" \
+      org.opencontainers.image.source="${SOURCE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+COPY build/config.json /etc/zot/config.json
+COPY bin/zot-${TARGETOS}-${TARGETARCH} /usr/bin/zot
+
 EXPOSE 5000
+ENTRYPOINT ["/usr/bin/zot"]
 CMD ["serve", "/etc/zot/config.json"]
