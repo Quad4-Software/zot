@@ -74,7 +74,15 @@ func NewScanner(storeController storage.StoreController, metaDB mTypes.MetaDB,
 			trivy.NewScanner(storeController, metaDB, cveConfig, log)))
 	}
 
-	return NewDecoratedScanner(NewMultiScanner(backends, log), log, opts...)
+	scanner := NewDecoratedScanner(NewMultiScanner(backends, log), log, opts...)
+
+	if vexEnabled(cveConfig) {
+		log.Info().Msg("vex statement filtering enabled for cve results")
+
+		return NewVexScanner(scanner, storeController, metaDB, log)
+	}
+
+	return scanner
 }
 
 func trivyEnabled(cveConfig *extconf.CVEConfig) bool {
@@ -85,6 +93,11 @@ func trivyEnabled(cveConfig *extconf.CVEConfig) bool {
 func grypeEnabled(cveConfig *extconf.CVEConfig) bool {
 	return cveConfig != nil && cveConfig.Grype != nil &&
 		(cveConfig.Grype.Enable == nil || *cveConfig.Grype.Enable)
+}
+
+func vexEnabled(cveConfig *extconf.CVEConfig) bool {
+	return cveConfig != nil && cveConfig.Vex != nil &&
+		(cveConfig.Vex.Enable == nil || *cveConfig.Vex.Enable)
 }
 
 func NewCVEInfo(scanner Scanner, metaDB mTypes.MetaDB, log log.Logger) *BaseCveInfo {

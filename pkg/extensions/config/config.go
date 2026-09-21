@@ -63,6 +63,15 @@ type CVEConfig struct {
 	UpdateInterval time.Duration // should be 2 hours or more, if not specified default be kept as 2 hours
 	Trivy          *TrivyConfig
 	Grype          *GrypeConfig
+	Vex            *VexConfig
+}
+
+// VexConfig controls whether OpenVEX statements attached to an image as
+// referrers suppress matching CVE findings. Opt-in because a statement marks
+// findings as resolved without rescanning; enable it when push access is
+// already trusted or signedOnly is on.
+type VexConfig struct {
+	BaseConfig `mapstructure:",squash"`
 }
 
 // GrypeConfig configures the optional Anchore grype scanner backend. The

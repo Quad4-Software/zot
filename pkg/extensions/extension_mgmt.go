@@ -332,10 +332,11 @@ type CVEScannerReport struct {
 // CVEScanReportResponse is the response of the mgmt CVE endpoint: one entry
 // per scanner plus the findings only a single scanner reported.
 type CVEScanReportResponse struct {
-	Image    string                      `json:"image"`
-	Scanners map[string]CVEScannerReport `json:"scanners"`
-	OnlyIn   map[string][]string         `json:"onlyIn"`
-	Common   []string                    `json:"common"`
+	Image         string                      `json:"image"`
+	Scanners      map[string]CVEScannerReport `json:"scanners"`
+	OnlyIn        map[string][]string         `json:"onlyIn"`
+	Common        []string                    `json:"common"`
+	VexSuppressed map[string]string           `json:"vexSuppressed,omitempty"`
 }
 
 // HandleCVEScanReport godoc
@@ -448,6 +449,14 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slices.Sort(response.Common)
+
+	if vexScanner, ok := mgmt.CveScanner.(*cveinfo.VexScanner); ok {
+		for _, result := range results {
+			response.VexSuppressed = vexScanner.VexSuppressed(repo, result.Digest)
+
+			break
+		}
+	}
 
 	buf, err := json.Marshal(response)
 	if err != nil {
