@@ -174,3 +174,41 @@ func TestCommon(t *testing.T) {
 		So(result, ShouldBeFalse)
 	})
 }
+
+func TestArtifactTagMatchers(t *testing.T) {
+	hex64 := strings.Repeat("a", 64)
+
+	Convey("IsCosignTag matches only exact digest-shaped cosign tags", t, func() {
+		So(common.IsCosignTag("sha256-"+hex64+".sig"), ShouldBeTrue)
+		So(common.IsCosignTag("sha256-"+hex64+".sbom"), ShouldBeTrue)
+
+		// lookalikes that embed the pattern but are not exact digest tags
+		// must not be treated as cosign artifacts
+		for _, tag := range []string{
+			"sha256-dead.sig",
+			"v1-sha256-" + hex64 + ".sig",
+			"sha256-" + hex64 + ".sig.bak",
+			"sha256-" + strings.ToUpper(hex64) + ".sig",
+			"sha256-" + hex64 + ".att",
+			"sha512-" + hex64 + ".sig",
+			"sha256-" + hex64,
+		} {
+			So(common.IsCosignTag(tag), ShouldBeFalse)
+		}
+	})
+
+	Convey("IsReferrersTag matches only the exact fallback tag", t, func() {
+		So(common.IsReferrersTag("sha256-"+hex64), ShouldBeTrue)
+
+		for _, tag := range []string{
+			"sha256-",
+			"sha256-abc",
+			"sha256-" + hex64 + "ff",
+			"sha256-" + strings.ToUpper(hex64),
+			"sha256-" + hex64 + ".sig",
+			"v1-sha256-" + hex64,
+		} {
+			So(common.IsReferrersTag(tag), ShouldBeFalse)
+		}
+	})
+}

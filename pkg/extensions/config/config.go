@@ -35,7 +35,9 @@ type ImageTrustConfig struct {
 	// SignedOnly rejects manifest pushes that create tags for digests without
 	// a trusted signature. Signatures are stored as referrer artifacts, so the
 	// required push order is: push the image by digest, sign it, then push the
-	// tag. Signature and referrer artifacts are exempt.
+	// tag. Signature and referrer artifacts are exempt. The policy gates
+	// client pushes only; the sync extension writes to storage directly and
+	// is treated as an administrative channel.
 	SignedOnly bool
 }
 

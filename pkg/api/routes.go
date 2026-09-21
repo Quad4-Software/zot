@@ -709,8 +709,9 @@ func (rh *RouteHandler) rejectUnsignedManifest(ctx context.Context, name, refere
 	}
 
 	// signature and sbom artifacts pushed under the cosign sha256-<digest>.sig
-	// and sha256-<digest>.sbom tag patterns are exempt
-	if zcommon.IsCosignTag(reference) {
+	// and sha256-<digest>.sbom tag patterns are exempt, as is the referrers
+	// fallback index pushed under the sha256-<digest> tag
+	if zcommon.IsCosignTag(reference) || zcommon.IsReferrersTag(reference) {
 		return false
 	}
 
@@ -718,14 +719,25 @@ func (rh *RouteHandler) rejectUnsignedManifest(ctx context.Context, name, refere
 		return false
 	}
 
-	// referrer artifacts (signatures, attestations, sboms) carry a subject
-	// descriptor and are not deployable images
+	// Non-deployable artifacts are exempt: referrer manifests carry a subject
+	// and a non-image config (cosign, notation, VEX, SBOM), and unattached
+	// artifacts use a non-image config too. A runnable image keeps an image
+	// config media type, so adding a fake subject does not evade the policy.
+	// Indexes are always deployable and always enforced.
 	var content struct {
 		Subject *ispec.Descriptor `json:"subject"`
+		Config  struct {
+			MediaType string `json:"mediaType"`
+		} `json:"config"`
 	}
 	if err := json.Unmarshal(body, &content); err != nil {
-		return false
-	} else if content.Subject != nil {
+		// fail closed: an unparseable body cannot be evaluated for exemptions
+		return true
+	}
+
+	if compat.IsImageManifestMediaType(mediaType) &&
+		content.Config.MediaType != ispec.MediaTypeImageConfig &&
+		!compat.IsCompatibleConfigMediaType(content.Config.MediaType) {
 		return false
 	}
 

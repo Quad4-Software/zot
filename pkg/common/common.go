@@ -38,9 +38,9 @@ const (
 	CosignSignatureTagSuffix = "sig"
 )
 
-var cosignSignatureTagRule = regexp.MustCompile(`sha256\-.+\.sig`)
+var cosignSignatureTagRule = regexp.MustCompile(`^sha256\-[0-9a-f]{64}\.sig$`)
 
-var cosignSBOMTagRule = regexp.MustCompile(`sha256\-.+\.sbom`)
+var cosignSBOMTagRule = regexp.MustCompile(`^sha256\-[0-9a-f]{64}\.sbom$`)
 
 func IsCosignSignature(tag string) bool {
 	return cosignSignatureTagRule.MatchString(tag)
@@ -129,8 +129,9 @@ func ContainsStringIgnoreCase(strSlice []string, str string) bool {
 
 // IsReferrersTag checks if tag is a referrers tag
 // (https://github.com/opencontainers/distribution-spec/blob/main/spec.md#referrers-tag-schema).
+// The fallback tag is exactly the subject digest with ':' replaced by '-'.
 func IsReferrersTag(tag string) bool {
-	referrersTagRule := regexp.MustCompile(`sha256\-[A-Za-z0-9]*$`)
+	referrersTagRule := regexp.MustCompile(`^sha256\-[0-9a-f]{64}$`)
 
 	return referrersTagRule.MatchString(tag)
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,12 +10,16 @@ import (
 	"strings"
 	"testing"
 
+	docker "github.com/distribution/distribution/v3/manifest/schema2"
 	godigest "github.com/opencontainers/go-digest"
+	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 
 	"zotregistry.dev/zot/v2/pkg/api/config"
 	"zotregistry.dev/zot/v2/pkg/api/constants"
+	extconf "zotregistry.dev/zot/v2/pkg/extensions/config"
 	"zotregistry.dev/zot/v2/pkg/log"
+	mTypes "zotregistry.dev/zot/v2/pkg/meta/types"
 	reqCtx "zotregistry.dev/zot/v2/pkg/requestcontext"
 	"zotregistry.dev/zot/v2/pkg/storage"
 	storageTypes "zotregistry.dev/zot/v2/pkg/storage/types"
@@ -632,4 +637,126 @@ func TestResolveBlobPresenceUserMayMountError(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, ok)
 	require.Equal(t, int64(-1), size)
+}
+
+func TestRejectUnsignedManifest(t *testing.T) {
+	t.Parallel()
+
+	defaultVal := true
+
+	conf := &config.Config{}
+	conf.Extensions = &extconf.ExtensionConfig{
+		Trust: &extconf.ImageTrustConfig{
+			BaseConfig: extconf.BaseConfig{Enable: &defaultVal},
+			Cosign:     true,
+			SignedOnly: true,
+		},
+	}
+
+	rh := &RouteHandler{
+		c: &Controller{
+			Config: conf,
+			Log:    log.NewTestLogger(),
+			// no signatures recorded: any deployable manifest push creating a
+			// tag must be rejected
+			MetaDB: mocks.MetaDBMock{
+				GetRepoMetaFn: func(ctx context.Context, repo string) (mTypes.RepoMeta, error) {
+					return mTypes.RepoMeta{Signatures: map[mTypes.ImageDigest]mTypes.ManifestSignatures{}}, nil
+				},
+			},
+		},
+	}
+
+	imageManifest := func(configMediaType string, withSubject bool) []byte {
+		manifest := map[string]interface{}{
+			"schemaVersion": 2,
+			"mediaType":     ispec.MediaTypeImageManifest,
+			"config": map[string]interface{}{
+				"mediaType": configMediaType,
+				"digest":    godigest.FromString("config").String(),
+				"size":      2,
+			},
+			"layers": []interface{}{},
+		}
+
+		if withSubject {
+			manifest["subject"] = map[string]interface{}{
+				"mediaType": ispec.MediaTypeImageManifest,
+				"digest":    godigest.FromString("subject").String(),
+				"size":      42,
+			}
+		}
+
+		raw, err := json.Marshal(manifest)
+		require.NoError(t, err)
+
+		return raw
+	}
+
+	hex64 := strings.Repeat("a", 64)
+
+	cases := []struct {
+		name        string
+		reference   string
+		mediaType   string
+		body        []byte
+		createsTags bool
+		want        bool
+	}{
+		// deployable image manifests pushed under a tag are enforced
+		{"tagged image manifest", "1.0", ispec.MediaTypeImageManifest,
+			imageManifest(ispec.MediaTypeImageConfig, false), false, true},
+		// a fake subject does not exempt a runnable image manifest
+		{"image manifest with fake subject", "1.0", ispec.MediaTypeImageManifest,
+			imageManifest(ispec.MediaTypeImageConfig, true), false, true},
+		{"image manifest with docker config and fake subject", "1.0", ispec.MediaTypeImageManifest,
+			imageManifest(docker.MediaTypeImageConfig, true), false, true},
+		// referrer-style artifacts stay exempt so sign/attest flows work
+		{"non-image config artifact", "1.0", ispec.MediaTypeImageManifest,
+			imageManifest("application/vnd.in-toto+json", true), false, false},
+		{"empty config artifact", "1.0", ispec.MediaTypeImageManifest,
+			imageManifest("", true), false, false},
+		// indexes are always deployable
+		{"index under tag", "1.0", ispec.MediaTypeImageIndex,
+			[]byte(`{"schemaVersion":2,"manifests":[]}`), false, true},
+		// digest pushes that create no tag stay allowed for sign-then-tag
+		{"digest push no tag", "sha256:" + hex64, ispec.MediaTypeImageManifest,
+			imageManifest(ispec.MediaTypeImageConfig, false), false, false},
+		// digest pushes carrying tag= create tags and are enforced
+		{"digest push with tag param", "sha256:" + hex64, ispec.MediaTypeImageManifest,
+			imageManifest(ispec.MediaTypeImageConfig, false), true, true},
+		// only exact cosign tag patterns are exempt
+		{"exact cosign sig tag", "sha256-" + hex64 + ".sig", ispec.MediaTypeImageManifest,
+			imageManifest("application/vnd.dev.cosign.simplesigning.v1+json", false), false, false},
+		{"exact cosign sbom tag", "sha256-" + hex64 + ".sbom", ispec.MediaTypeImageManifest,
+			imageManifest("application/vnd.in-toto+json", false), false, false},
+		{"short-hex sig tag", "sha256-dead.sig", ispec.MediaTypeImageManifest,
+			imageManifest(ispec.MediaTypeImageConfig, false), false, true},
+		{"prefixed sig tag", "v1-sha256-" + hex64 + ".sig", ispec.MediaTypeImageManifest,
+			imageManifest(ispec.MediaTypeImageConfig, false), false, true},
+		{"uppercase hex sig tag", "sha256-" + strings.Repeat("A", 64) + ".sig",
+			ispec.MediaTypeImageManifest, imageManifest(ispec.MediaTypeImageConfig, false), false, true},
+		// exact referrers fallback tag is exempt, lookalikes are not
+		{"referrers fallback tag", "sha256-" + hex64, ispec.MediaTypeImageIndex,
+			[]byte(`{"schemaVersion":2,"manifests":[]}`), false, false},
+		{"referrers lookalike tag", "sha256-" + hex64 + "zz", ispec.MediaTypeImageIndex,
+			[]byte(`{"schemaVersion":2,"manifests":[]}`), false, true},
+		// unparseable bodies fail closed
+		{"malformed manifest json", "1.0", ispec.MediaTypeImageManifest,
+			[]byte(`{"schemaVersion":`), false, true},
+		// non-manifest media types are not gated here
+		{"non-manifest media type", "1.0", "application/vnd.oci.artifact.v1+json",
+			[]byte(`{}`), false, false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := rh.rejectUnsignedManifest(context.Background(), "repo", tc.reference,
+				tc.mediaType, tc.body, tc.createsTags)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
