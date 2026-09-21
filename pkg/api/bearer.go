@@ -99,6 +99,12 @@ func NewBearerAuthorizer(realm string, service string, keyFunc BearerAuthorizerK
 func UserAccessControlFromBearerAccess(access []ResourceAccess) *reqCtx.UserAccessControl {
 	userAc := reqCtx.NewUserAccessControl()
 
+	// Distribution bearer tokens carry repository scopes only and have no
+	// admin concept; set this unconditionally so a token without repository
+	// grants does not fall through to the unset-authz "everybody is admin"
+	// default in IsAdmin().
+	userAc.SetIsAdmin(false)
+
 	readPatterns := map[string]bool{}
 	createPatterns := map[string]bool{}
 	updatePatterns := map[string]bool{}
@@ -139,7 +145,6 @@ func UserAccessControlFromBearerAccess(access []ResourceAccess) *reqCtx.UserAcce
 		return userAc
 	}
 
-	userAc.SetIsAdmin(false)
 	userAc.SetGlobPatterns(constants.ReadPermission, readPatterns)
 	userAc.SetGlobPatterns(constants.CreatePermission, createPatterns)
 	userAc.SetGlobPatterns(constants.UpdatePermission, updatePatterns)

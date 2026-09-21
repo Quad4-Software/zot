@@ -454,6 +454,21 @@ func TestUserAccessControlFromBearerAccess(t *testing.T) {
 		So(userAc.Can(constants.ReadPermission, "zot-test"), ShouldBeTrue)
 	})
 
+	Convey("tokens without repository scopes are never admin", t, func() {
+		// IsAdmin defaults to true on a fresh UserAccessControl until
+		// SetIsAdmin is called; bearer scopes must always fail closed
+		for _, access := range [][]api.ResourceAccess{
+			nil,
+			{},
+			{{Type: "registry", Name: "catalog", Actions: []string{"*"}}},
+			{{Type: "repository", Name: "", Actions: []string{"pull"}}},
+			{{Type: "repository", Name: "**", Actions: []string{"*"}}},
+		} {
+			userAc := api.UserAccessControlFromBearerAccess(access)
+			So(userAc.IsAdmin(), ShouldBeFalse)
+		}
+	})
+
 	Convey("glob metacharacters in access names are not mapped to repo permissions", t, func() {
 		userAc := api.UserAccessControlFromBearerAccess([]api.ResourceAccess{
 			{
