@@ -65,7 +65,10 @@ const useStyles = makeStyles((theme) => ({
   searchIcon: {
     color: theme.palette.text.secondary,
     paddingRight: '3%',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   input: {
     marginLeft: 1,
@@ -75,12 +78,12 @@ const useStyles = makeStyles((theme) => ({
     fontSize: '1rem',
     backgroundColor: theme.palette.quad4.raised,
     borderRadius: '0.625rem',
-    color: theme.palette.divider
+    color: theme.palette.text.primary
   },
   inputFocused: {
     backgroundColor: theme.palette.background.paper,
     borderRadius: '0.625rem',
-    color: 'rgba(0, 0, 0, 0.6);'
+    color: theme.palette.text.primary
   },
   searchItem: {
     alignItems: 'center',
@@ -289,7 +292,7 @@ function SearchSuggestion({ setSearchCurrentValue = () => {} }) {
         <InputBase
           placeholder={'Search for content...'}
           className={`${classes.input} ${isComponentFocused && classes.inputFocused}`}
-          sx={{ input: { '&::placeholder': { opacity: 1 } } }}
+          sx={{ input: { '&::placeholder': { color: 'text.secondary', opacity: 0.85 } } }}
           onKeyUp={handleSearch}
           onFocus={() => openMenu()}
           {...getInputProps()}

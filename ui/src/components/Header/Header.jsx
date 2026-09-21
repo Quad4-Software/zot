@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
 
-import { isAuthenticated, isAuthenticationEnabled, logoutUser } from '../../utilities/authUtilities';
+import { isAuthenticated, isAuthenticationEnabled, getLoggedInUser, logoutUser } from '../../utilities/authUtilities';
 import { useThemeMode } from 'utilities/ThemeModeProvider';
 
 // components
@@ -154,16 +154,13 @@ function Header({ setSearchCurrentValue = () => {} }) {
                 Quad4
               </a>
             </Grid>
-            <Grid item className={classes.headerLinkContainer}>
-              <Link to="/admin" className={classes.link}>
-                Admin
-              </Link>
-            </Grid>
-            <Grid item className={classes.headerLinkContainer}>
-              <a className={classes.link} href="https://zotregistry.dev" target="_blank" rel="noreferrer">
-                Docs
-              </a>
-            </Grid>
+            {(!isAuthenticationEnabled() || getLoggedInUser()) && (
+              <Grid item className={classes.headerLinkContainer}>
+                <Link to="/admin" className={classes.link}>
+                  Admin
+                </Link>
+              </Grid>
+            )}
           </Grid>
           <Grid item xs={6} md={4} className={classes.gridItem}>
             {path !== '/' && <SearchSuggestion setSearchCurrentValue={setSearchCurrentValue} />}

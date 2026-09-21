@@ -73,11 +73,101 @@ export const buildTheme = (mode) => {
     typography: {
       fontFamily: "'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     },
+    shape: {
+      borderRadius: 10
+    },
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
             backgroundColor: q.canvas
+          }
+        }
+      },
+      MuiButton: {
+        defaultProps: {
+          disableElevation: true
+        },
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
+            borderRadius: '0.625rem',
+            fontWeight: 600
+          },
+          outlined: {
+            borderColor: q.line,
+            '&:hover': {
+              borderColor: q.muted
+            }
+          }
+        }
+      },
+      MuiIconButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: '0.625rem'
+          }
+        }
+      },
+      MuiOutlinedInput: {
+        styleOverrides: {
+          root: {
+            borderRadius: '0.625rem',
+            backgroundColor: q.surface,
+            transition: 'border-color 120ms ease, box-shadow 120ms ease',
+            '& fieldset': {
+              borderColor: q.line
+            },
+            '&:hover fieldset': {
+              borderColor: q.muted
+            },
+            '&.Mui-focused fieldset': {
+              borderColor: q.fg
+            }
+          },
+          input: {
+            color: q.fg,
+            '&::placeholder': {
+              color: q.muted,
+              opacity: 0.85
+            }
+          }
+        }
+      },
+      MuiInputBase: {
+        styleOverrides: {
+          input: {
+            '&::placeholder': {
+              color: q.muted,
+              opacity: 0.85
+            }
+          }
+        }
+      },
+      MuiInputLabel: {
+        styleOverrides: {
+          root: {
+            color: q.muted,
+            '&.Mui-focused': {
+              color: q.fg
+            }
+          }
+        }
+      },
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            backgroundColor: q.surface,
+            border: `1px solid ${q.line}`,
+            boxShadow: 'none'
+          }
+        }
+      },
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            backgroundColor: q.surface,
+            border: `1px solid ${q.line}`
           }
         }
       }

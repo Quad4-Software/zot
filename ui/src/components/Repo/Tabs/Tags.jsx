@@ -68,6 +68,7 @@ export default function Tags(props) {
             showRepoName={false}
             onTagDelete={onTagDelete}
             isDeletable={tag.isDeletable}
+            downloadCount={tag.downloadCount}
           />
         );
       })
@@ -92,7 +93,8 @@ export default function Tags(props) {
           gutterBottom
           component="div"
           align="left"
-          style={{ color: 'rgba(0, 0, 0, 0.87)', fontSize: '1.5rem', fontWeight: '600' }}
+          style={{ fontSize: '1.5rem', fontWeight: '600' }}
+          color="text.primary"
         >
           Tags History
         </Typography>

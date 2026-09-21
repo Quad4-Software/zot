@@ -38,16 +38,15 @@ const useStyles = makeStyles((theme) => ({
     alignItems: 'center',
     justifyContent: 'center',
     width: '60%',
-    height: '60%',
+    maxWidth: '34rem',
+    minHeight: '60%',
     background: theme.palette.background.paper,
-    boxShadow: '0rem 0.3125rem 0.625rem rgba(131, 131, 131, 0.08)',
-    borderRadius: '0.75rem',
+    borderRadius: '1rem',
     minWidth: '30rem'
   },
   loginCardContent: {
     display: 'flex',
     flexDirection: 'column',
-    border: '0.1875rem black',
     width: '100%',
     padding: '3rem'
   },
@@ -71,46 +70,47 @@ const useStyles = makeStyles((theme) => ({
     marginBottom: '1.5rem'
   },
   textColor: {
-    color: theme.palette.text.secondary
+    color: theme.palette.text.primary
   },
   labelColor: {
     color: theme.palette.text.secondary,
-    '&:focused': {
-      color: theme.palette.text.secondary
+    '&.Mui-focused': {
+      color: theme.palette.text.primary
     }
   },
   continueButton: {
     textTransform: 'none',
-    background: theme.palette.error.main,
-    color: theme.palette.text.primary,
-    fontSize: '1.438rem',
+    background: theme.palette.primary.main,
+    color: theme.palette.primary.contrastText,
+    fontSize: '1.125rem',
     fontWeight: '600',
-    height: '3.125rem',
-    borderRadius: '0.25rem',
+    height: '3rem',
+    borderRadius: '0.625rem',
     letterSpacing: '0.01rem',
     marginBottom: '1rem',
     padding: 0,
     boxShadow: 'none',
     '&:hover': {
-      backgroundColor: theme.palette.error.main,
+      backgroundColor: theme.palette.text.secondary,
       boxShadow: 'none'
     }
   },
   continueAsGuestButton: {
     textTransform: 'none',
-    background: theme.palette.background.paper,
+    background: 'transparent',
     color: theme.palette.text.secondary,
-    fontSize: '1.438rem',
+    fontSize: '1.125rem',
     fontWeight: '600',
-    height: '3.125rem',
-    borderRadius: '0.25rem',
+    height: '3rem',
+    borderRadius: '0.625rem',
     border: `1px solid ${theme.palette.divider}`,
     letterSpacing: '0.01rem',
     marginBottom: '1rem',
     padding: 0,
     boxShadow: 'none',
     '&:hover': {
-      backgroundColor: theme.palette.background.paper,
+      backgroundColor: theme.palette.quad4.raised,
+      borderColor: theme.palette.text.secondary,
       boxShadow: 'none'
     }
   },

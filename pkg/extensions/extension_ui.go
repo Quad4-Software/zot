@@ -52,7 +52,7 @@ func addUICacheHeaders(h http.Handler) http.HandlerFunc { //nolint:varnamelen
 
 func addUISecurityHeaders(h http.Handler) http.HandlerFunc { //nolint:varnamelen
 	return func(w http.ResponseWriter, r *http.Request) {
-		permissionsPolicy := "microphone=(), geolocation=(), battery=(), camera=(), autoplay=(), gyroscope=(), payment=()"
+		permissionsPolicy := "microphone=(), geolocation=(), camera=(), autoplay=(), gyroscope=(), payment=()"
 		w.Header().Set("Permissions-Policy", permissionsPolicy)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
