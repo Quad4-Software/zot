@@ -25,8 +25,6 @@ import { EXPLORE_PAGE_SIZE } from 'utilities/paginationConstants';
 import SearchIcon from '@mui/icons-material/Search';
 import DownloadIcon from '@mui/icons-material/Download';
 
-import * as XLSX from 'xlsx';
-import exportFromJSON from 'export-from-json';
 import ViewHeadlineIcon from '@mui/icons-material/ViewHeadline';
 import ViewAgendaIcon from '@mui/icons-material/ViewAgenda';
 
@@ -246,18 +244,18 @@ function VulnerabilitiesDetails(props) {
     }
   };
 
-  const handleOnExportExcel = () => {
-    const wb = XLSX.utils.book_new(),
-      ws = XLSX.utils.json_to_sheet(allCveData);
+  const handleOnExportJSON = async () => {
+    const { default: exportFromJSON } = await import('export-from-json');
+    const fileName = `${name}:${tag}-vulnerabilities`;
+    const exportType = exportFromJSON.types.json;
 
-    XLSX.utils.book_append_sheet(wb, ws, 'vulnerabilities');
-
-    XLSX.writeFile(wb, `${name}:${tag}-vulnerabilities.xlsx`);
+    exportFromJSON({ data: allCveData, fileName, exportType });
 
     handleCloseExport();
   };
 
-  const handleOnExportCSV = () => {
+  const handleOnExportCSV = async () => {
+    const { default: exportFromJSON } = await import('export-from-json');
     const fileName = `${name}:${tag}-vulnerabilities`;
     const exportType = exportFromJSON.types.csv;
 
@@ -441,13 +439,13 @@ function VulnerabilitiesDetails(props) {
           </MenuItem>
           <Divider sx={{ my: 0.5 }} />
           <MenuItem
-            onClick={handleOnExportExcel}
+            onClick={handleOnExportJSON}
             disableRipple
             disabled={isLoadingAllCve}
             className={classes.popper}
-            data-testid="export-excel-menuItem"
+            data-testid="export-json-menuItem"
           >
-            xlsx
+            json
           </MenuItem>
         </Menu>
       </Stack>

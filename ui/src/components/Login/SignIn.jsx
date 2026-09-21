@@ -199,9 +199,8 @@ export default function SignIn({ isLoggedIn, setIsLoggedIn, wrapperSetLoading = 
   const handleBasicAuth = () => {
     requestProcessingRef.current = true;
     setRequestProcessing(true);
-    let cfg = {};
     const token = btoa(username + ':' + password);
-    cfg = {
+    const cfg = {
       headers: {
         Authorization: `Basic ${token}`
       },

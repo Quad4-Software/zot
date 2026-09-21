@@ -21,15 +21,32 @@ import (
 var content embed.FS
 
 type uiHandler struct {
-	log log.Logger
+	indexHTML []byte
+	log       log.Logger
 }
 
 func (uih uiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	buf, _ := content.ReadFile("build/index.html")
+	// the SPA entry point changes on every release, never cache it
+	w.Header().Set("Cache-Control", "no-cache")
 
-	_, err := w.Write(buf)
+	_, err := w.Write(uih.indexHTML)
 	if err != nil {
 		uih.log.Error().Err(err).Msg("failed to serve index.html")
+	}
+}
+
+// addUICacheHeaders marks content-hashed vite assets as immutable so
+// browsers and crawlers fetch them once per release. Everything else
+// (fonts, images, manifest) gets a short revalidation window.
+func addUICacheHeaders(h http.Handler) http.HandlerFunc { //nolint:varnamelen
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
+
+		h.ServeHTTP(w, r)
 	}
 }
 
@@ -72,7 +89,15 @@ func SetupUIRoutes(conf *config.Config, router *mux.Router,
 	log.Info().Msg("setting up ui routes")
 
 	fsub, _ := fs.Sub(content, "build")
-	uih := uiHandler{log: log}
+
+	indexHTML, err := content.ReadFile("build/index.html")
+	if err != nil {
+		log.Error().Err(err).Msg("failed to read embedded index.html, ui routes disabled")
+
+		return
+	}
+
+	uih := uiHandler{indexHTML: indexHTML, log: log}
 
 	// See https://go-review.googlesource.com/c/go/+/482635/2/src/net/http/fs.go
 	// See https://github.com/golang/go/issues/59469
@@ -95,7 +120,7 @@ func SetupUIRoutes(conf *config.Config, router *mux.Router,
 	router.PathPrefix("/admin").Methods(allowedMethods...).
 		Handler(addUISecurityHeaders(uih))
 	router.PathPrefix("/").Methods(allowedMethods...).
-		Handler(addUISecurityHeaders(http.FileServer(http.FS(fsub))))
+		Handler(addUISecurityHeaders(addUICacheHeaders(http.FileServer(http.FS(fsub)))))
 
 	log.Info().Msg("finished setting up ui routes")
 }

@@ -6,7 +6,10 @@ import VulnerabilitiesDetails from 'components/Tag/Tabs/VulnerabilitiesDetails';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 
-jest.mock('xlsx');
+jest.mock('export-from-json', () => ({
+  __esModule: true,
+  default: Object.assign(jest.fn(), { types: { csv: 'csv', json: 'json' } })
+}));
 
 const StateVulnerabilitiesWrapper = () => {
   return (
@@ -808,16 +811,13 @@ describe('Vulnerabilties page', () => {
   });
 
   it('should allow export of vulnerabilities list', async () => {
-    const xlsxMock = jest.createMockFromModule('xlsx');
-    xlsxMock.writeFile = jest.fn();
-
     jest.spyOn(api, 'get').mockResolvedValue({ status: 200, data: { data: mockCVEList } });
     render(<StateVulnerabilitiesWrapper />);
     await waitFor(() => expect(screen.getAllByText('Vulnerabilities')).toHaveLength(1));
     const downloadBtn = await screen.findAllByTestId('DownloadIcon');
     await fireEvent.click(downloadBtn[0]);
     expect(await screen.findByTestId('export-csv-menuItem')).toBeInTheDocument();
-    expect(await screen.findByTestId('export-excel-menuItem')).toBeInTheDocument();
+    expect(await screen.findByTestId('export-json-menuItem')).toBeInTheDocument();
     const exportAsCSVBtn = screen.getByText(/csv/i);
     expect(exportAsCSVBtn).toBeInTheDocument();
     global.URL.createObjectURL = jest.fn();
@@ -825,16 +825,13 @@ describe('Vulnerabilties page', () => {
     await fireEvent.click(exportAsCSVBtn);
     await waitFor(() => expect(screen.queryByTestId('export-csv-menuItem')).not.toBeInTheDocument());
     await fireEvent.click(downloadBtn[0]);
-    const exportAsExcelBtn = screen.getByText(/xlsx/i);
-    expect(exportAsExcelBtn).toBeInTheDocument();
-    await userEvent.click(exportAsExcelBtn);
-    expect(await screen.queryByTestId('export-excel-menuItem')).not.toBeInTheDocument();
+    const exportAsJsonBtn = screen.getByText(/json/i);
+    expect(exportAsJsonBtn).toBeInTheDocument();
+    await userEvent.click(exportAsJsonBtn);
+    expect(await screen.queryByTestId('export-json-menuItem')).not.toBeInTheDocument();
   });
 
   it("should log an error when data can't be fetched for downloading", async () => {
-    const xlsxMock = jest.createMockFromModule('xlsx');
-    xlsxMock.writeFile = jest.fn();
-
     jest
       .spyOn(api, 'get')
       .mockResolvedValueOnce({ status: 200, data: { data: mockCVEList } })
@@ -845,7 +842,7 @@ describe('Vulnerabilties page', () => {
     const downloadBtn = await screen.findAllByTestId('DownloadIcon');
     fireEvent.click(downloadBtn[0]);
     expect(await screen.findByTestId('export-csv-menuItem')).toBeInTheDocument();
-    expect(await screen.findByTestId('export-excel-menuItem')).toBeInTheDocument();
+    expect(await screen.findByTestId('export-json-menuItem')).toBeInTheDocument();
     await waitFor(() => expect(error).toBeCalledTimes(1));
   });
 

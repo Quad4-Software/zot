@@ -27,7 +27,19 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: 'build'
+    outDir: 'build',
+    target: 'es2020',
+    cssCodeSplit: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router', 'react-router-dom'],
+          mui: ['@mui/material', '@mui/icons-material', '@mui/lab', '@mui/styles', '@mui/x-date-pickers'],
+          emotion: ['@emotion/react', '@emotion/styled']
+        }
+      }
+    }
   },
   esbuild: {
     loader: 'jsx',
