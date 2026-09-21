@@ -13,6 +13,7 @@ import (
 	zcommon "zotregistry.dev/zot/v2/pkg/common"
 	"zotregistry.dev/zot/v2/pkg/compat"
 	extconf "zotregistry.dev/zot/v2/pkg/extensions/config"
+	"zotregistry.dev/zot/v2/pkg/extensions/search/cve/grype"
 	cvemodel "zotregistry.dev/zot/v2/pkg/extensions/search/cve/model"
 	"zotregistry.dev/zot/v2/pkg/extensions/search/cve/trivy"
 	"zotregistry.dev/zot/v2/pkg/log"
@@ -54,9 +55,36 @@ type BaseCveInfo struct {
 func NewScanner(storeController storage.StoreController, metaDB mTypes.MetaDB,
 	cveConfig *extconf.CVEConfig, log log.Logger, opts ...ScannerOption,
 ) Scanner {
-	trivyScanner := trivy.NewScanner(storeController, metaDB, cveConfig, log)
+	backends := []namedScanner{}
 
-	return NewDecoratedScanner(trivyScanner, log, opts...)
+	if trivyEnabled(cveConfig) {
+		backends = append(backends, namedBackend("trivy",
+			trivy.NewScanner(storeController, metaDB, cveConfig, log)))
+	}
+
+	if grypeEnabled(cveConfig) {
+		backends = append(backends, namedBackend("grype",
+			grype.NewScanner(storeController, metaDB, cveConfig, log)))
+	}
+
+	if len(backends) == 0 {
+		// unreachable when callers honor IsCveScanningEnabled; keep a working
+		// default so a direct NewScanner call still scans.
+		backends = append(backends, namedBackend("trivy",
+			trivy.NewScanner(storeController, metaDB, cveConfig, log)))
+	}
+
+	return NewDecoratedScanner(NewMultiScanner(backends, log), log, opts...)
+}
+
+func trivyEnabled(cveConfig *extconf.CVEConfig) bool {
+	return cveConfig != nil && cveConfig.Trivy != nil &&
+		(cveConfig.Trivy.Enable == nil || *cveConfig.Trivy.Enable)
+}
+
+func grypeEnabled(cveConfig *extconf.CVEConfig) bool {
+	return cveConfig != nil && cveConfig.Grype != nil &&
+		(cveConfig.Grype.Enable == nil || *cveConfig.Grype.Enable)
 }
 
 func NewCVEInfo(scanner Scanner, metaDB mTypes.MetaDB, log log.Logger) *BaseCveInfo {

@@ -56,9 +56,22 @@ type SearchConfig struct {
 type CVEConfig struct {
 	UpdateInterval time.Duration // should be 2 hours or more, if not specified default be kept as 2 hours
 	Trivy          *TrivyConfig
+	Grype          *GrypeConfig
+}
+
+// GrypeConfig configures the optional Anchore grype scanner backend. The
+// block is opt-in: when present the grype scanner runs alongside trivy unless
+// enable is explicitly false.
+type GrypeConfig struct {
+	BaseConfig `mapstructure:",squash"`
+
+	// DBListingURL overrides the grype vulnerability DB distribution endpoint.
+	DBListingURL string // default is "https://grype.anchore.io/databases"
 }
 
 type TrivyConfig struct {
+	BaseConfig `mapstructure:",squash"`
+
 	DBRepository     string // default is "ghcr.io/aquasecurity/trivy-db"
 	JavaDBRepository string // default is "ghcr.io/aquasecurity/trivy-java-db"
 	// IgnoreFile specifies the path to a Trivy ignore file (same as Trivy's --ignorefile).
@@ -115,8 +128,24 @@ func (e *ExtensionConfig) IsCveScanningEnabled() bool {
 		return false
 	}
 
-	return e.Search != nil && e.Search.Enable != nil && *e.Search.Enable &&
-		e.Search.CVE != nil && e.Search.CVE.Trivy != nil
+	if e == nil || e.Search == nil || e.Search.Enable == nil || !*e.Search.Enable ||
+		e.Search.CVE == nil {
+		return false
+	}
+
+	cve := e.Search.CVE
+	trivyOn := cve.Trivy != nil && (cve.Trivy.Enable == nil || *cve.Trivy.Enable)
+
+	return trivyOn || e.IsGrypeEnabled()
+}
+
+// IsGrypeEnabled checks whether the grype CVE scanner backend is configured.
+func (e *ExtensionConfig) IsGrypeEnabled() bool {
+	if e == nil || e.Search == nil || e.Search.CVE == nil || e.Search.CVE.Grype == nil {
+		return false
+	}
+
+	return e.Search.CVE.Grype.Enable == nil || *e.Search.CVE.Grype.Enable
 }
 
 // IsEventRecorderEnabled checks if event recording is enabled in this extensions config.

@@ -252,6 +252,39 @@ type scanner struct {
 	log           log.Logger
 }
 
+// PerScannerReporter passthroughs: the decorated scanner wraps a MultiScanner
+// when several backends are enabled, so the reporting methods must be
+// forwarded explicitly for type assertions on the outer Scanner to succeed.
+func (s *scanner) ScannerNames() []string {
+	if reporter, ok := s.Scanner.(PerScannerReporter); ok {
+		return reporter.ScannerNames()
+	}
+
+	return []string{"scanner"}
+}
+
+func (s *scanner) ScanPerScanner(ctx context.Context, image string,
+) (map[string]cvemodel.ScanResult, map[string]error) {
+	if reporter, ok := s.Scanner.(PerScannerReporter); ok {
+		return reporter.ScanPerScanner(ctx, image)
+	}
+
+	result, err := s.Scanner.ScanImage(ctx, image)
+	if err != nil {
+		return nil, map[string]error{"scanner": err}
+	}
+
+	return map[string]cvemodel.ScanResult{"scanner": result}, nil
+}
+
+func (s *scanner) CachedPerScanner(repo, digest string) map[string]map[string]zcommon.CVE {
+	if reporter, ok := s.Scanner.(PerScannerReporter); ok {
+		return reporter.CachedPerScanner(repo, digest)
+	}
+
+	return map[string]map[string]zcommon.CVE{"scanner": s.Scanner.GetCachedResult(repo, digest)}
+}
+
 func (s *scanner) ScanImage(ctx context.Context, image string) (cvemodel.ScanResult, error) {
 	result, err := s.Scanner.ScanImage(ctx, image)
 	if err == nil && s.eventRecorder != nil && !result.WasCached {

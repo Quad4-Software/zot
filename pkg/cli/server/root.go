@@ -1117,6 +1117,15 @@ func applyDefaultValues(config *config.Config, viperInstance *viper.Viper, logge
 						Msg("using default trivy detection priority.")
 					config.Extensions.Search.CVE.Trivy.DetectionPriority = defaultDetectionPriority
 				}
+
+				if grypeConf := config.Extensions.Search.CVE.Grype; grypeConf != nil &&
+					(grypeConf.Enable == nil || *grypeConf.Enable) && grypeConf.DBListingURL == "" {
+					defaultDBListingURL := "https://grype.anchore.io/databases"
+					logger.Info().Str("url", defaultDBListingURL).Str("component", "config").
+						Msg("using default grype-db listing URL.")
+
+					grypeConf.DBListingURL = defaultDBListingURL
+				}
 			}
 		}
 
