@@ -1,0 +1,129 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOEXPERIMENT: jsonv2
+
+jobs:
+  ui:
+    name: ui
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ui
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        working-directory: ui
+        run: npm run lint
+
+      - name: Test
+        working-directory: ui
+        run: npm test
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
+
+      - name: Upload UI bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-build
+          path: ui/build
+          retention-days: 1
+          if-no-files-found: error
+
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    needs: ui
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: Check formatting
+        run: |
+          files=$(gofmt -l ./pkg ./cmd)
+          if [ -n "$files" ]; then
+            echo "unformatted files:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./pkg/... ./cmd/...
+
+      - name: Build minimal binary
+        run: make binary-minimal
+
+      - name: Download UI bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-build
+          path: ui/build
+
+      - name: Build extended binary
+        run: make binary
+        env:
+          ZUI_BUILD_PATH: ui/build
+
+      - name: Unit tests
+        run: go test -short -count=1 ./pkg/extensions/... ./pkg/api/config/... ./pkg/log/...
+
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

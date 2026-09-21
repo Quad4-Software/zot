@@ -16,6 +16,17 @@ updates:
       go-dependencies:
         patterns:
           - "*"
+  - package-ecosystem: "npm"
+    directory: "/ui"
+    open-pull-requests-limit: 10
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     open-pull-requests-limit: 10

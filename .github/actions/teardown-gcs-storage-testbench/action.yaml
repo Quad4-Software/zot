@@ -1,8 +1,0 @@
-name: 'Teardown storage-testbench'
-description: 'Stop & remove storage-testbench container'
-runs:
-  using: "composite"
-  steps:
-    - if: always()
-      shell: bash
-      run: docker rm -f storage-testbench || true

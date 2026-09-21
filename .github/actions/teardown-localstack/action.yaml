@@ -1,7 +1,0 @@
-name: 'Stop localstack'
-description: 'Stop localstack container'
-runs:
-  using: "composite"
-  steps:
-    - shell: bash
-      run: localstack stop || true
