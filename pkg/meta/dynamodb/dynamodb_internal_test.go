@@ -354,15 +354,15 @@ func TestIgnoreResourceInUseError(t *testing.T) {
 
 func TestCreateVersionTableCreateErrors(t *testing.T) {
 	const (
-		region            = "us-east-2"
-		versionTablename  = "VersionTest"
-		describeTableOp   = "DynamoDB_20120810.DescribeTable"
-		createTableOp     = "DynamoDB_20120810.CreateTable"
-		updateItemOp      = "DynamoDB_20120810.UpdateItem"
-		resourceNotFound  = `{"__type":"com.amazon.coral.service#ResourceNotFoundException","message":"not found"}`
-		resourceInUse     = `{"__type":"com.amazon.coral.service#ResourceInUseException","message":"already exists"}`
-		internalError     = `{"__type":"com.amazon.coral.service#InternalServerError","message":"boom"}`
-		activeTable       = `{"Table":{"TableName":"VersionTest","TableStatus":"ACTIVE"}}`
+		region           = "us-east-2"
+		versionTablename = "VersionTest"
+		describeTableOp  = "DynamoDB_20120810.DescribeTable"
+		createTableOp    = "DynamoDB_20120810.CreateTable"
+		updateItemOp     = "DynamoDB_20120810.UpdateItem"
+		resourceNotFound = `{"__type":"com.amazon.coral.service#ResourceNotFoundException","message":"not found"}`
+		resourceInUse    = `{"__type":"com.amazon.coral.service#ResourceInUseException","message":"already exists"}`
+		internalError    = `{"__type":"com.amazon.coral.service#InternalServerError","message":"boom"}`
+		activeTable      = `{"Table":{"TableName":"VersionTest","TableStatus":"ACTIVE"}}`
 	)
 
 	newTestClient := func(handler func(target string) (int, string)) *dynamodb.Client {
