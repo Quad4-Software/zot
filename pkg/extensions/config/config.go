@@ -70,8 +70,9 @@ type CVEConfig struct {
 
 // VexConfig controls whether OpenVEX statements attached to an image as
 // referrers suppress matching CVE findings. Opt-in because a statement marks
-// findings as resolved without rescanning; enable it when push access is
-// already trusted or signedOnly is on.
+// findings as resolved without rescanning. Statements are parsed but their
+// signatures are not verified: push access to the repository is the trust
+// boundary, so enable it only where push access is already restricted.
 type VexConfig struct {
 	BaseConfig `mapstructure:",squash"`
 }

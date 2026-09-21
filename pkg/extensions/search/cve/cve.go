@@ -74,15 +74,17 @@ func NewScanner(storeController storage.StoreController, metaDB mTypes.MetaDB,
 			trivy.NewScanner(storeController, metaDB, cveConfig, log)))
 	}
 
-	scanner := NewDecoratedScanner(NewMultiScanner(backends, log), log, opts...)
+	var scanner Scanner = NewMultiScanner(backends, log)
 
 	if vexEnabled(cveConfig) {
 		log.Info().Msg("vex statement filtering enabled for cve results")
 
-		return NewVexScanner(scanner, storeController, metaDB, log)
+		// wrap inside the decorator so ImageScanned events report the
+		// post-VEX finding counts
+		scanner = NewVexScanner(scanner, storeController, metaDB, log)
 	}
 
-	return scanner
+	return NewDecoratedScanner(scanner, log, opts...)
 }
 
 func trivyEnabled(cveConfig *extconf.CVEConfig) bool {

@@ -523,11 +523,38 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 
 	slices.Sort(response.Common)
 
-	if vexScanner, ok := mgmt.CveScanner.(*cveinfo.VexScanner); ok {
-		for _, result := range results {
-			response.VexSuppressed = vexScanner.VexSuppressed(repo, result.Digest)
+	if vexScanner, ok := mgmt.CveScanner.(cveinfo.VexSuppressor); ok {
+		// Union suppressions across every digest the backends actually scanned:
+		// map iteration order would otherwise pick one at random, and an index
+		// scan can legitimately produce different digests per backend.
+		seenDigests := map[string]struct{}{}
 
-			break
+		for _, result := range results {
+			if _, dup := seenDigests[result.Digest]; dup || result.Digest == "" {
+				continue
+			}
+
+			seenDigests[result.Digest] = struct{}{}
+
+			for id, status := range vexScanner.VexSuppressed(repo, result.Digest) {
+				if response.VexSuppressed == nil {
+					response.VexSuppressed = map[string]string{}
+				}
+
+				response.VexSuppressed[id] = status
+			}
+		}
+
+		// cached mode resolves the digest before scanning, so suppressions are
+		// still reportable when no backend has a cached result
+		if len(seenDigests) == 0 && digest != "" {
+			for id, status := range vexScanner.VexSuppressed(repo, digest) {
+				if response.VexSuppressed == nil {
+					response.VexSuppressed = map[string]string{}
+				}
+
+				response.VexSuppressed[id] = status
+			}
 		}
 	}
 

@@ -285,6 +285,16 @@ func (s *scanner) CachedPerScanner(repo, digest string) map[string]map[string]zc
 	return map[string]map[string]zcommon.CVE{"scanner": s.Scanner.GetCachedResult(repo, digest)}
 }
 
+// VexSuppressed forwards VEX suppression reporting to the wrapped scanner
+// when it implements VexSuppressor.
+func (s *scanner) VexSuppressed(repo, digest string) map[string]string {
+	if suppressor, ok := s.Scanner.(VexSuppressor); ok {
+		return suppressor.VexSuppressed(repo, digest)
+	}
+
+	return nil
+}
+
 // ScannerDBStatus forwards DB freshness reporting to the wrapped scanner when
 // it implements DBStatusReporter.
 func (s *scanner) ScannerDBStatus() []cvemodel.ScannerDBStatus {
