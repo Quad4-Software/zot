@@ -40,8 +40,12 @@ import LabelIcon from '@mui/icons-material/Label';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import BugReportIcon from '@mui/icons-material/BugReport';
+import HistoryIcon from '@mui/icons-material/History';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import DeleteTag from 'components/Shared/DeleteTag';
 import Loading from 'components/Shared/Loading';
+import ScannerStatusCard from './ScannerStatusCard';
+import TrustPolicyCard from './TrustPolicyCard';
 
 // styling
 import { makeStyles } from 'theme';
@@ -235,6 +239,7 @@ function ScannerReportButton({ repo, tag }) {
   const scannerNames = report ? Object.keys(report.scanners || {}) : [];
   const onlyIn = report?.onlyIn || {};
   const common = report?.common || [];
+  const vexSuppressed = report?.vexSuppressed || {};
   const hasDisagreement = Object.values(onlyIn).some((ids) => !isEmpty(ids));
 
   return (
@@ -314,6 +319,201 @@ function ScannerReportButton({ repo, tag }) {
                       </div>
                     </div>
                   ))}
+              {!isEmpty(vexSuppressed) && (
+                <div style={{ marginTop: '1rem' }}>
+                  <Typography className={classes.cardTitle}>Suppressed by VEX statements</Typography>
+                  <div className={classes.infoGrid}>
+                    {Object.entries(vexSuppressed).map(([id, status]) => (
+                      <Chip key={id} label={`${id} (${status})`} size="small" color="success" variant="outlined" />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function TagHistoryButton({ repo }) {
+  const classes = useStyles();
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    setHistory(null);
+    setError(null);
+    setOpen(true);
+
+    api
+      .get(`${host()}${endpoints.tagHistory(repo)}`)
+      .then((response) => setHistory(response.data?.history || []))
+      .catch((err) => {
+        console.error(err);
+        const status = err?.response?.status;
+        setError(
+          status === 403
+            ? 'admin access required'
+            : status === 501
+              ? 'tag history is not supported by this metadb backend'
+              : 'failed to load tag history'
+        );
+      });
+  };
+
+  return (
+    <>
+      <Tooltip title="Tag history">
+        <IconButton className={classes.icons} size="small" onClick={load} data-testid={`tag-history-${repo}`}>
+          <HistoryIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>{repo} tag history</DialogTitle>
+        <DialogContent>
+          {error && <Typography className={classes.errorText}>{error}</Typography>}
+          {!error && history === null && <Loading />}
+          {!error && history !== null && isEmpty(history) && (
+            <Typography className={classes.errorText}>no recorded tag movements</Typography>
+          )}
+          {!error && !isEmpty(history) && (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell className={classes.tableHeadCell}>When</TableCell>
+                  <TableCell className={classes.tableHeadCell}>Tag</TableCell>
+                  <TableCell className={classes.tableHeadCell}>Action</TableCell>
+                  <TableCell className={classes.tableHeadCell}>Digest</TableCell>
+                  <TableCell className={classes.tableHeadCell}>By</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {history.map((entry, index) => (
+                  <TableRow key={`${entry.timestamp}-${index}`} className={classes.tagRow}>
+                    <TableCell className={classes.tableCell}>
+                      {entry.timestamp?.slice(0, 19).replace('T', ' ')}
+                    </TableCell>
+                    <TableCell className={classes.tableCell}>{entry.tag}</TableCell>
+                    <TableCell className={classes.tableCell}>
+                      <Chip
+                        label={entry.action}
+                        size="small"
+                        variant="outlined"
+                        color={entry.action === 'delete' ? 'error' : 'default'}
+                      />
+                    </TableCell>
+                    <TableCell className={classes.tableCell}>
+                      <Tooltip title={entry.digest} placement="top">
+                        <span>{entry.digest?.slice(0, 19)}</span>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell className={classes.tableCell}>{entry.user || '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ScanMatrixButton({ repo }) {
+  const classes = useStyles();
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [scannerNames, setScannerNames] = useState([]);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    setRows(null);
+    setError(null);
+    setOpen(true);
+
+    api
+      .get(`${host()}${endpoints.detailedRepoInfo(repo)}`)
+      .then((response) => {
+        const images = response.data?.data?.ExpandedRepoInfo?.Images || [];
+        const tags = images.map((img) => img.Tag).filter(Boolean);
+
+        return Promise.all(
+          tags.map((tag) =>
+            api
+              .get(`${host()}${endpoints.cveScanReport(repo, tag, { cached: true })}`)
+              .then((r) => ({ tag, scanners: r.data?.scanners || {} }))
+              .catch(() => ({ tag, scanners: null }))
+          )
+        );
+      })
+      .then((tagRows) => {
+        const names = [...new Set(tagRows.flatMap((row) => Object.keys(row.scanners || {})))];
+        setScannerNames(names);
+        setRows(tagRows);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError('failed to load scan matrix');
+      });
+  };
+
+  return (
+    <>
+      <Tooltip title="Scanner severity matrix (cached)">
+        <IconButton className={classes.icons} size="small" onClick={load} data-testid={`scan-matrix-${repo}`}>
+          <GridOnIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>{repo} scanner matrix</DialogTitle>
+        <DialogContent>
+          {error && <Typography className={classes.errorText}>{error}</Typography>}
+          {!error && rows === null && <Loading />}
+          {!error && rows !== null && (
+            <>
+              <Typography sx={{ color: 'text.secondary', fontSize: '0.8125rem', marginBottom: '0.75rem' }}>
+                Cached results only. Cells show each scanner&apos;s max severity per tag.
+              </Typography>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell className={classes.tableHeadCell}>Tag</TableCell>
+                    {scannerNames.map((name) => (
+                      <TableCell key={name} className={classes.tableHeadCell}>
+                        {name}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.tag} className={classes.tagRow}>
+                      <TableCell className={classes.tableCell}>{row.tag}</TableCell>
+                      {scannerNames.map((name) => {
+                        const cell = row.scanners?.[name];
+                        return (
+                          <TableCell key={name} className={classes.tableCell}>
+                            {cell === undefined ? (
+                              <Typography sx={{ color: 'text.secondary' }}>-</Typography>
+                            ) : cell?.error ? (
+                              <Chip
+                                label={cell.error === 'not scanned' ? 'not scanned' : 'error'}
+                                size="small"
+                                variant="outlined"
+                              />
+                            ) : (
+                              <VulnerabilityChipCheck vulnerabilitySeverity={cell.maxSeverity || 'NONE'} />
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </>
           )}
         </DialogContent>
@@ -509,6 +709,9 @@ function Admin() {
         </Card>
       )}
 
+      <ScannerStatusCard />
+      <TrustPolicyCard trust={serverInfo?.trust} />
+
       {serverInfo?.storage && (serverInfo.storage.gc || !isEmpty(serverInfo.storage.retention)) && (
         <Card className={classes.card}>
           <CardContent>
@@ -618,6 +821,8 @@ function Admin() {
                           {transform.formatBytes(Number(repo.Size || 0))}
                         </TableCell>
                         <TableCell className={classes.tableCell} align="right">
+                          <TagHistoryButton repo={repo.Name} />
+                          <ScanMatrixButton repo={repo.Name} />
                           <Tooltip title="Open repository">
                             <IconButton
                               className={classes.icons}

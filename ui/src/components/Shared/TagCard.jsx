@@ -79,7 +79,18 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 export default function TagCard(props) {
-  const { repoName, showRepoName = true, tag, lastUpdated, vendor, manifests, repo, onTagDelete, isDeletable } = props;
+  const {
+    repoName,
+    showRepoName = true,
+    tag,
+    lastUpdated,
+    vendor,
+    manifests,
+    repo,
+    onTagDelete,
+    isDeletable,
+    downloadCount
+  } = props;
   const [open, setOpen] = useState(false);
 
   const classes = useStyles();
@@ -120,6 +131,16 @@ export default function TagCard(props) {
             </Typography>
           </Tooltip>
         </Stack>
+        {!isNaN(downloadCount) && (
+          <Stack direction="row" spacing={0.5}>
+            <Typography variant="caption" sx={{ fontWeight: '400', fontSize: '0.8125rem' }}>
+              Pulls
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: '600', fontSize: '0.8125rem' }}>
+              {downloadCount}
+            </Typography>
+          </Stack>
+        )}
         <Divider variant="fullWidth" className={classes.cardDivider} />
         <Stack direction="row" onClick={() => setOpen(!open)}>
           {!open ? (

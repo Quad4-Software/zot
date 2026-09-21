@@ -82,8 +82,14 @@ const endpoints = {
   status: `/v2/`,
   authConfig: `/v2/_zot/ext/mgmt`,
   runGC: `/v2/_zot/ext/mgmt/gc`,
-  cveScanReport: (repo, reference) =>
-    `/v2/_zot/ext/mgmt/cve?repo=${encodeURIComponent(repo)}&reference=${encodeURIComponent(reference)}`,
+  cveScanReport: (repo, reference, { cached = false } = {}) =>
+    `/v2/_zot/ext/mgmt/cve?repo=${encodeURIComponent(repo)}&reference=${encodeURIComponent(reference)}${
+      cached ? '&cached=true' : ''
+    }`,
+  scannerStatus: `/v2/_zot/ext/mgmt/scanners`,
+  tagHistory: (repo) => `/v2/_zot/ext/mgmt/taghistory?repo=${encodeURIComponent(repo)}`,
+  cosignKeys: `/v2/_zot/ext/cosign`,
+  notationCerts: `/v2/_zot/ext/notation`,
   openidAuth: `/zot/auth/login`,
   logout: `/zot/auth/logout`,
   apiKeys: '/zot/auth/apikey',
@@ -93,7 +99,7 @@ const endpoints = {
       (pageNumber - 1) * pageSize
     }}){Results {Name LastUpdated Size Platforms {Os Arch}  NewestImage { Tag Digest Vulnerabilities {MaxSeverity Count} Description  Licenses Title Source IsSigned SignatureInfo { Tool IsTrusted Author } Documentation Vendor Labels} IsStarred IsBookmarked StarCount DownloadCount}}}`,
   detailedRepoInfo: (name) =>
-    `/v2/_zot/ext/search?query={ExpandedRepoInfo(repo:"${name}"){Images {Digest Manifests {Digest Platform {Os Arch} Size} Vulnerabilities {MaxSeverity Count} Tag LastUpdated Vendor IsDeletable IsSigned SignatureInfo { Tool IsTrusted Author } } Summary {Name LastUpdated Size Platforms {Os Arch} Vendors IsStarred IsBookmarked NewestImage {RepoName Digest IsSigned SignatureInfo { Tool IsTrusted Author } Vulnerabilities {MaxSeverity Count} Manifests {Digest} Tag Vendor Title Documentation DownloadCount Source Description Licenses}}}}`,
+    `/v2/_zot/ext/search?query={ExpandedRepoInfo(repo:"${name}"){Images {Digest Manifests {Digest Platform {Os Arch} Size} Vulnerabilities {MaxSeverity Count} Tag LastUpdated Vendor IsDeletable IsSigned SignatureInfo { Tool IsTrusted Author } DownloadCount } Summary {Name LastUpdated Size Platforms {Os Arch} Vendors IsStarred IsBookmarked NewestImage {RepoName Digest IsSigned SignatureInfo { Tool IsTrusted Author } Vulnerabilities {MaxSeverity Count} Manifests {Digest} Tag Vendor Title Documentation DownloadCount Source Description Licenses}}}}`,
   detailedImageInfo: (name, tag) =>
     `/v2/_zot/ext/search?query={Image(image: "${name}:${tag}"){RepoName Digest IsSigned SignatureInfo { Tool IsTrusted Author } Vulnerabilities {MaxSeverity Count}  Referrers {MediaType ArtifactType Size Digest Annotations{Key Value}} Tag TaggedTimestamp ArtifactType Manifests {ArtifactType Layers {Size Digest} History {Layer {Size Digest} HistoryDescription {CreatedBy EmptyLayer}} Digest ConfigDigest LastUpdated Size Platform {Os Arch} Referrers {MediaType ArtifactType Size Digest Annotations{Key Value}}} Vendor Licenses }}`,
   vulnerabilitiesForRepo: (
@@ -167,6 +173,10 @@ const endpoints = {
   },
   referrers: ({ repo, digest, type = '' }) =>
     `/v2/_zot/ext/search?query={Referrers(repo: "${repo}" digest: "${digest}" type: "${type}"){MediaType ArtifactType Size Digest Annotations{Key Value}}}`,
+  cveDiffForImages: (minuend, subtrahend, { pageNumber = 1, pageSize = 50 } = {}) =>
+    `/v2/_zot/ext/search?query={CVEDiffListForImages(minuend: {Repo:"${minuend.repo}" Tag:"${minuend.tag}"}, subtrahend: {Repo:"${subtrahend.repo}" Tag:"${subtrahend.tag}"}, requestedPage: {limit:${pageSize} offset:${
+      (pageNumber - 1) * pageSize
+    }}){Minuend {Repo Tag Digest} Subtrahend {Repo Tag Digest} Summary {Count MaxSeverity} Page {TotalCount ItemCount} CVEList {Id Title Severity Reference PackageList {Name InstalledVersion FixedVersion}}}}`,
   bookmarkToggle: (repo) => `/v2/_zot/ext/userprefs?repo=${repo}&action=toggleBookmark`,
   starToggle: (repo) => `/v2/_zot/ext/userprefs?repo=${repo}&action=toggleStar`
 };

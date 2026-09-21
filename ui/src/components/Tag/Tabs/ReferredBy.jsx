@@ -8,7 +8,7 @@ import { mapReferrer } from 'utilities/objectModels';
 
 const useStyles = makeStyles((theme) => ({
   title: {
-    color: 'rgba(0, 0, 0, 0.87)',
+    color: theme.palette.text.primary,
     fontSize: '1.5rem',
     fontWeight: '600',
     paddingTop: '0.5rem'
@@ -29,12 +29,17 @@ function ReferredBy(props) {
   useEffect(() => {
     if (!isEmpty(referrers)) {
       const mappedReferrersData = referrers.map((referrer) => mapReferrer(referrer));
+      mappedReferrersData.sort((a, b) => {
+        const aTime = a.annotations?.find((an) => an.key === 'org.opencontainers.image.created')?.value || '';
+        const bTime = b.annotations?.find((an) => an.key === 'org.opencontainers.image.created')?.value || '';
+        return bTime.localeCompare(aTime);
+      });
       setReferrersData(mappedReferrersData);
     } else {
       setReferrersData([]);
     }
     setIsLoading(false);
-  }, []);
+  }, [referrers]);
 
   const renderReferrers = () => {
     return !isEmpty(referrersData) ? (

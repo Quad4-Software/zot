@@ -1,6 +1,6 @@
 import React from 'react';
 import { makeStyles } from 'theme';
-import { Card, CardContent, Stack, Tooltip, Typography, Collapse, Box, Grid } from '@mui/material';
+import { Card, CardContent, Chip, Stack, Tooltip, Typography, Collapse, Box, Grid } from '@mui/material';
 import { KeyboardArrowDown, KeyboardArrowRight } from '@mui/icons-material';
 import { useState } from 'react';
 
@@ -63,15 +63,56 @@ const useStyles = makeStyles((theme) => ({
   }
 }));
 
+const SIGNATURE_TYPES = [
+  'application/vnd.dev.cosign.artifact.sig.v1+json',
+  'application/vnd.cncf.notary.signature',
+  'application/vnd.dev.sigstore.bundle'
+];
+
+const VEX_TYPES = ['application/vnd.openvex+json', 'text/vnd.openvex+json'];
+
+const SBOM_TYPES = ['application/vnd.syft+json', 'application/spdx+json', 'application/vnd.cyclonedx+json'];
+
+const classifyReferrer = (artifactType, mediaType, annotations) => {
+  const types = [artifactType, mediaType].filter(Boolean).join(' ');
+  const predicateType = annotations?.find((a) => a.key === 'dev.cosignproject.cosign/predicateType')?.value || '';
+  if (SIGNATURE_TYPES.some((t) => types.includes(t))) return { label: 'Signature', color: 'success' };
+  if (VEX_TYPES.some((t) => types.includes(t)) || predicateType.includes('openvex'))
+    return { label: 'VEX', color: 'info' };
+  if (
+    SBOM_TYPES.some((t) => types.includes(t)) ||
+    predicateType.includes('spdx') ||
+    predicateType.includes('cyclonedx')
+  )
+    return { label: 'SBOM', color: 'info' };
+  if (predicateType) return { label: 'Attestation', color: 'warning' };
+  return { label: 'Artifact', color: 'default' };
+};
+
+const createdTimestamp = (annotations) =>
+  annotations?.find((a) => a.key === 'org.opencontainers.image.created')?.value || null;
+
 export default function ReferrerCard(props) {
   const { artifactType, mediaType, size, digest, annotations } = props;
   const [digestDropdownOpen, setDigestDropdownOpen] = useState(false);
   const [annotationDropdownOpen, setAnnotationDropdownOpen] = useState(false);
   const classes = useStyles();
+  const kind = classifyReferrer(artifactType, mediaType, annotations);
+  const created = createdTimestamp(annotations);
 
   return (
     <Card className={classes.card} raised>
       <CardContent className={classes.content}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ paddingBottom: '0.5rem' }}>
+          <Chip label={kind.label} color={kind.color} size="small" variant="outlined" />
+          {created && (
+            <Tooltip title={created} placement="top">
+              <Typography variant="caption" color="text.secondary">
+                {created.slice(0, 16).replace('T', ' ')}
+              </Typography>
+            </Tooltip>
+          )}
+        </Stack>
         <Typography variant="body1" align="left" className={classes.cardText}>
           Type: {artifactType && `${artifactType}`}
         </Typography>

@@ -912,7 +912,7 @@ describe('Tags details', () => {
     fireEvent.click(referrersTab);
     jest.spyOn(api, 'get').mockResolvedValueOnce({ status: 200, data: [] });
     expect(await screen.findByTestId('referred-by-container')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(6));
   });
 
   it("should log an error when data can't be fetched", async () => {

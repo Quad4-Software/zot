@@ -31,6 +31,7 @@ import IsDependentOn from './Tabs/IsDependentOn';
 import Loading from '../Shared/Loading';
 import { VulnerabilityIconCheck, SignatureIconCheck } from 'utilities/vulnerabilityAndSignatureCheck';
 import ReferredBy from './Tabs/ReferredBy';
+import CompareTags from './Tabs/CompareTags';
 import { makeStyles } from 'theme';
 
 import OciImage from '../Shared/OciImage';
@@ -221,6 +222,8 @@ function TagDetails() {
 
         return <ReferredBy referrers={allReferrers} />;
       }
+      case 'Compare':
+        return <CompareTags name={reponame} tag={tag} />;
       default:
         return (
           <HistoryLayers
@@ -356,6 +359,9 @@ function TagDetails() {
               </ToggleButton>
               <ToggleButton value="ReferredBy" role="tab">
                 Referred by
+              </ToggleButton>
+              <ToggleButton value="Compare" role="tab">
+                Compare
               </ToggleButton>
             </ToggleButtonGroup>
           </Grid>
