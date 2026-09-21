@@ -4,6 +4,7 @@ package boltdb
 const (
 	ImageMetaBuck     = "ImageMeta"
 	RepoMetaBuck      = "RepoMeta"
+	TagHistoryBuck    = "TagHistory"
 	UserDataBucket    = "UserData"
 	VersionBucket     = "Version"
 	UserAPIKeysBucket = "UserAPIKeys"

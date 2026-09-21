@@ -285,6 +285,16 @@ func (s *scanner) CachedPerScanner(repo, digest string) map[string]map[string]zc
 	return map[string]map[string]zcommon.CVE{"scanner": s.Scanner.GetCachedResult(repo, digest)}
 }
 
+// ScannerDBStatus forwards DB freshness reporting to the wrapped scanner when
+// it implements DBStatusReporter.
+func (s *scanner) ScannerDBStatus() []cvemodel.ScannerDBStatus {
+	if reporter, ok := s.Scanner.(DBStatusReporter); ok {
+		return reporter.ScannerDBStatus()
+	}
+
+	return nil
+}
+
 func (s *scanner) ScanImage(ctx context.Context, image string) (cvemodel.ScanResult, error) {
 	result, err := s.Scanner.ScanImage(ctx, image)
 	if err == nil && s.eventRecorder != nil && !result.WasCached {

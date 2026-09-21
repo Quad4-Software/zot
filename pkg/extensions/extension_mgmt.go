@@ -5,6 +5,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	zerr "zotregistry.dev/zot/v2/errors"
 	"zotregistry.dev/zot/v2/pkg/api/config"
 	"zotregistry.dev/zot/v2/pkg/api/constants"
 	zcommon "zotregistry.dev/zot/v2/pkg/common"
@@ -75,6 +77,20 @@ func (s *StorageSummary) UnmarshalJSON([]byte) error {
 	return nil
 }
 
+// TrustSummary exposes which image trust features are enabled. It is
+// populated manually in HandleGetConfig; UnmarshalJSON is a no-op so
+// MarshalThroughStruct ignores the source extensions block.
+type TrustSummary struct {
+	Enabled    bool `json:"enabled"`
+	Cosign     bool `json:"cosign"`
+	Notation   bool `json:"notation"`
+	SignedOnly bool `json:"signedOnly"`
+}
+
+func (t *TrustSummary) UnmarshalJSON([]byte) error {
+	return nil
+}
+
 type StrippedConfig struct {
 	DistSpecVersion string `json:"distSpecVersion" mapstructure:"distSpecVersion"`
 	Commit          string `json:"commit"          mapstructure:"commit"`
@@ -86,6 +102,7 @@ type StrippedConfig struct {
 	} `json:"http" mapstructure:"http"`
 
 	Storage StorageSummary `json:"storage"`
+	Trust   TrustSummary   `json:"trust"`
 }
 
 func IsBuiltWithMGMTExtension() bool {
@@ -159,6 +176,20 @@ func SetupMgmtRoutes(conf *config.Config, router *mux.Router, storeController st
 	cveRouter.Use(zcommon.ACHeadersMiddleware(conf, http.MethodGet))
 	cveRouter.Methods(http.MethodGet).HandlerFunc(mgmt.HandleCVEScanReport)
 
+	// Scanner DB freshness report, admin only.
+	scannersRouter := router.PathPrefix(constants.ExtMgmt + "/scanners").Subrouter()
+	scannersRouter.Use(zcommon.CORSHeadersMiddleware(conf.HTTP.AllowOrigin))
+	scannersRouter.Use(zcommon.AddExtensionSecurityHeaders())
+	scannersRouter.Use(zcommon.ACHeadersMiddleware(conf, http.MethodGet))
+	scannersRouter.Methods(http.MethodGet).HandlerFunc(mgmt.HandleScannerStatus)
+
+	// Tag movement history, admin only.
+	tagHistoryRouter := router.PathPrefix(constants.ExtMgmt + "/taghistory").Subrouter()
+	tagHistoryRouter.Use(zcommon.CORSHeadersMiddleware(conf.HTTP.AllowOrigin))
+	tagHistoryRouter.Use(zcommon.AddExtensionSecurityHeaders())
+	tagHistoryRouter.Use(zcommon.ACHeadersMiddleware(conf, http.MethodGet))
+	tagHistoryRouter.Methods(http.MethodGet).HandlerFunc(mgmt.HandleTagHistory)
+
 	// The endpoint for reading configuration should be available to all users
 	allowedMethods := zcommon.AllowedMethods(http.MethodGet)
 
@@ -207,6 +238,13 @@ func (mgmt *Mgmt) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 		sanitizedConfig.HTTP.AccessControl != nil &&
 		sanitizedConfig.HTTP.AccessControl.AnonymousPolicyExists() {
 		stripped.HTTP.Auth.AllowAnonymousAccess = true
+	}
+
+	if ext := sanitizedConfig.CopyExtensionsConfig(); ext != nil && ext.IsImageTrustEnabled() {
+		stripped.Trust.Enabled = true
+		stripped.Trust.Cosign = ext.IsCosignEnabled()
+		stripped.Trust.Notation = ext.IsNotationEnabled()
+		stripped.Trust.SignedOnly = ext.IsSignedOnlyPushEnabled()
 	}
 
 	storageConfig := sanitizedConfig.CopyStorageConfig()
@@ -375,8 +413,39 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	image := zcommon.GetFullImageName(repo, reference)
+	cachedOnly := r.URL.Query().Get("cached") == "true"
 
-	results, errs := reporter.ScanPerScanner(r.Context(), image)
+	var results map[string]cvemodel.ScanResult
+	var errs map[string]error
+
+	var digest string
+
+	if cachedOnly {
+		// Cached mode serves already-computed results for the repo heatmap
+		// without triggering scans. Resolve the reference to a digest first.
+		repoMeta, metaErr := mgmt.MetaDB.GetRepoMeta(r.Context(), repo)
+		if metaErr != nil {
+			w.WriteHeader(http.StatusNotFound)
+
+			return
+		}
+
+		if desc, ok := repoMeta.Tags[reference]; ok {
+			digest = desc.Digest
+		} else {
+			digest = reference
+		}
+
+		cached := reporter.CachedPerScanner(repo, digest)
+		results = map[string]cvemodel.ScanResult{}
+		errs = map[string]error{}
+
+		for name, cveMap := range cached {
+			results[name] = cvemodel.ScanResult{CVEMap: cveMap, Digest: digest, WasCached: true}
+		}
+	} else {
+		results, errs = reporter.ScanPerScanner(r.Context(), image)
+	}
 
 	response := CVEScanReportResponse{
 		Image:    image,
@@ -400,7 +469,11 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 
 		result, found := results[name]
 		if !found {
-			report.Error = "no result"
+			if cachedOnly {
+				report.Error = "not scanned"
+			} else {
+				report.Error = "no result"
+			}
 
 			response.Scanners[name] = report
 
@@ -461,6 +534,101 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 	buf, err := json.Marshal(response)
 	if err != nil {
 		mgmt.Log.Error().Err(err).Str("component", "mgmt").Msg("failed to marshal cve report response")
+		w.WriteHeader(http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(buf)
+}
+
+// ScannerStatusResponse is the response of the mgmt scanners endpoint.
+type ScannerStatusResponse struct {
+	Scanners []cvemodel.ScannerDBStatus `json:"scanners"`
+}
+
+// HandleScannerStatus godoc
+// @Summary Scanner DB freshness report
+// @Description Reports the vulnerability DB version, last update time and
+// staleness for every enabled CVE scanner backend. Admin users only.
+// @Router  /v2/_zot/ext/mgmt/scanners [get]
+// @Success 200 {object}  extensions.ScannerStatusResponse
+// @Failure 403 {string}  string "forbidden"
+// @Failure 501 {string}  string "cve scanning not enabled"
+func (mgmt *Mgmt) HandleScannerStatus(w http.ResponseWriter, r *http.Request) {
+	userAc, err := reqCtx.UserAcFromContext(r.Context())
+	if err != nil || userAc == nil || !userAc.IsAdmin() {
+		w.WriteHeader(http.StatusForbidden)
+
+		return
+	}
+
+	reporter, ok := mgmt.CveScanner.(cveinfo.DBStatusReporter)
+	if !ok || reporter == nil {
+		w.WriteHeader(http.StatusNotImplemented)
+
+		return
+	}
+
+	buf, err := json.Marshal(ScannerStatusResponse{Scanners: reporter.ScannerDBStatus()})
+	if err != nil {
+		mgmt.Log.Error().Err(err).Str("component", "mgmt").Msg("failed to marshal scanner status response")
+		w.WriteHeader(http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(buf)
+}
+
+// TagHistoryResponse is the response of the mgmt taghistory endpoint.
+type TagHistoryResponse struct {
+	Repo    string                   `json:"repo"`
+	History []mTypes.TagHistoryEntry `json:"history"`
+}
+
+// HandleTagHistory godoc
+// @Summary Tag movement history for a repository
+// @Description Returns the recorded tag-to-digest movements for a repo,
+// newest first. Admin users only.
+// @Router  /v2/_zot/ext/mgmt/taghistory [get]
+// @Param   repo          query     string   true   "repository name"
+// @Success 200 {object}  extensions.TagHistoryResponse
+// @Failure 400 {string}  string "bad request"
+// @Failure 403 {string}  string "forbidden"
+// @Failure 501 {string}  string "not supported by metadb backend"
+func (mgmt *Mgmt) HandleTagHistory(w http.ResponseWriter, r *http.Request) {
+	userAc, err := reqCtx.UserAcFromContext(r.Context())
+	if err != nil || userAc == nil || !userAc.IsAdmin() {
+		w.WriteHeader(http.StatusForbidden)
+
+		return
+	}
+
+	repo := r.URL.Query().Get("repo")
+	if repo == "" || !zcommon.CheckIsCorrectRepoNameFormat(repo) {
+		w.WriteHeader(http.StatusBadRequest)
+
+		return
+	}
+
+	entries, err := mgmt.MetaDB.GetTagHistory(repo)
+	if err != nil {
+		if errors.Is(err, zerr.ErrNotImplemented) {
+			w.WriteHeader(http.StatusNotImplemented)
+		} else {
+			mgmt.Log.Error().Err(err).Str("component", "mgmt").Str("repo", repo).Msg("failed to read tag history")
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+
+		return
+	}
+
+	buf, err := json.Marshal(TagHistoryResponse{Repo: repo, History: entries})
+	if err != nil {
+		mgmt.Log.Error().Err(err).Str("component", "mgmt").Msg("failed to marshal tag history response")
 		w.WriteHeader(http.StatusInternalServerError)
 
 		return

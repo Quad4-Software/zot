@@ -66,6 +66,11 @@ func New(boltDB *bbolt.DB, log log.Logger) (*BoltDB, error) {
 			return err
 		}
 
+		_, err = transaction.CreateBucketIfNotExists([]byte(TagHistoryBuck))
+		if err != nil {
+			return err
+		}
+
 		repoBlobsBuck, err := transaction.CreateBucketIfNotExists([]byte(RepoBlobsBuck))
 		if err != nil {
 			return err
@@ -272,6 +277,17 @@ func (bdw *BoltDB) SetRepoReference(ctx context.Context, repo string, reference 
 				Digest:          imageMeta.Digest.String(),
 				MediaType:       imageMeta.MediaType,
 				TaggedTimestamp: taggedTimestamp,
+			}
+
+			if err := appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
+				Tag:       reference,
+				Digest:    imageMeta.Digest.String(),
+				MediaType: imageMeta.MediaType,
+				Timestamp: time.Now(),
+				User:      userid,
+				Action:    "push",
+			}); err != nil {
+				return err
 			}
 		}
 
@@ -1478,11 +1494,30 @@ func (bdw *BoltDB) RemoveRepoReference(repo, reference string, manifestDigest go
 
 		if !common.ReferenceIsDigest(reference) {
 			delete(protoRepoMeta.Tags, reference)
+
+			if err := appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
+				Tag:       reference,
+				Digest:    manifestDigest.String(),
+				Timestamp: time.Now(),
+				Action:    "delete",
+			}); err != nil {
+				return err
+			}
 		} else {
 			// remove all tags pointing to this digest
 			for tag, desc := range protoRepoMeta.Tags {
 				if desc.Digest == reference {
 					delete(protoRepoMeta.Tags, tag)
+
+					if err := appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
+						Tag:       tag,
+						Digest:    desc.Digest,
+						MediaType: desc.MediaType,
+						Timestamp: time.Now(),
+						Action:    "delete",
+					}); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -2236,4 +2271,64 @@ func (bdw *BoltDB) Close() error {
 	bdw.DB = nil
 
 	return err
+}
+
+// tagHistoryMaxEntries bounds the per-repo tag movement log so it cannot grow
+// without limit.
+const tagHistoryMaxEntries = 200
+
+// appendTagHistory appends an entry to the repo's tag movement log inside the
+// current transaction, trimming the oldest entries past the bound.
+func appendTagHistory(tx *bbolt.Tx, repo string, entry mTypes.TagHistoryEntry) error {
+	buck := tx.Bucket([]byte(TagHistoryBuck))
+	if buck == nil {
+		return nil
+	}
+
+	entries := []mTypes.TagHistoryEntry{}
+
+	if blob := buck.Get([]byte(repo)); blob != nil {
+		if err := json.Unmarshal(blob, &entries); err != nil {
+			return err
+		}
+	}
+
+	entries = append(entries, entry)
+
+	if len(entries) > tagHistoryMaxEntries {
+		entries = entries[len(entries)-tagHistoryMaxEntries:]
+	}
+
+	blob, err := json.Marshal(entries)
+	if err != nil {
+		return err
+	}
+
+	return buck.Put([]byte(repo), blob)
+}
+
+// GetTagHistory returns the tag movement log for a repo, newest first.
+func (bdw *BoltDB) GetTagHistory(repo string) ([]mTypes.TagHistoryEntry, error) {
+	entries := []mTypes.TagHistoryEntry{}
+
+	err := bdw.DB.View(func(tx *bbolt.Tx) error {
+		buck := tx.Bucket([]byte(TagHistoryBuck))
+		if buck == nil {
+			return nil
+		}
+
+		blob := buck.Get([]byte(repo))
+		if blob == nil {
+			return nil
+		}
+
+		return json.Unmarshal(blob, &entries)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	slices.Reverse(entries)
+
+	return entries, nil
 }

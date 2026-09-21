@@ -3,6 +3,7 @@
 package extensions
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -50,6 +51,7 @@ func SetupImageTrustRoutes(conf *config.Config, router *mux.Router, metaDB mType
 		// The endpoints for uploading signatures should be available only to admins
 		notationRouter.Use(zcommon.AuthzOnlyAdminsMiddleware(conf))
 		notationRouter.Methods(allowedMethods...).HandlerFunc(trust.HandleNotationCertificateUpload)
+		notationRouter.Methods(http.MethodGet).HandlerFunc(trust.HandleNotationCertificateList)
 	}
 
 	if extensionsConfig.IsCosignEnabled() {
@@ -62,6 +64,7 @@ func SetupImageTrustRoutes(conf *config.Config, router *mux.Router, metaDB mType
 		// The endpoints for uploading signatures should be available only to admins
 		cosignRouter.Use(zcommon.AuthzOnlyAdminsMiddleware(conf))
 		cosignRouter.Methods(allowedMethods...).HandlerFunc(trust.HandleCosignPublicKeyUpload)
+		cosignRouter.Methods(http.MethodGet).HandlerFunc(trust.HandleCosignPublicKeyList)
 	}
 
 	log.Info().Msg("finished setting up image trust routes")
@@ -110,6 +113,64 @@ func (trust *ImageTrust) HandleCosignPublicKeyUpload(response http.ResponseWrite
 	}
 
 	response.WriteHeader(http.StatusOK)
+}
+
+// HandleCosignPublicKeyList godoc
+// @Summary List uploaded cosign public keys
+// @Description Lists the digest names of uploaded cosign public keys. Admin users only.
+// @Router   /v2/_zot/ext/cosign [get]
+// @Produce json
+// @Success 200 {object} map[string][]string
+// @Failure 403 {string} string "forbidden"
+// @Failure 500 {string} string "internal server error"
+func (trust *ImageTrust) HandleCosignPublicKeyList(response http.ResponseWriter, request *http.Request) {
+	keys, err := trust.ImageTrustStore.CosignStorage.GetPublicKeys()
+	if err != nil {
+		trust.Log.Error().Err(err).Str("component", "image-trust").Msg("failed to list cosign keys")
+		response.WriteHeader(http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSON(response, map[string][]string{"keys": keys})
+}
+
+// HandleNotationCertificateList godoc
+// @Summary List uploaded notation certificates
+// @Description Lists stored notation certificates as truststore/x509 paths. Admin users only.
+// @Router   /v2/_zot/ext/notation [get]
+// @Produce json
+// @Success 200 {object} map[string][]string
+// @Failure 403 {string} string "forbidden"
+// @Failure 500 {string} string "internal server error"
+func (trust *ImageTrust) HandleNotationCertificateList(response http.ResponseWriter, request *http.Request) {
+	certs := []string{}
+
+	if local, ok := trust.ImageTrustStore.NotationStorage.(*imagetrust.CertificateLocalStorage); ok {
+		var err error
+
+		certs, err = local.GetCertificateNames()
+		if err != nil {
+			trust.Log.Error().Err(err).Str("component", "image-trust").Msg("failed to list notation certificates")
+			response.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+	}
+
+	writeJSON(response, map[string][]string{"certificates": certs})
+}
+
+func writeJSON(response http.ResponseWriter, value any) {
+	buf, err := json.Marshal(value)
+	if err != nil {
+		response.WriteHeader(http.StatusInternalServerError)
+
+		return
+	}
+
+	response.Header().Set("Content-Type", "application/json")
+	_, _ = response.Write(buf)
 }
 
 // HandleNotationCertificateUpload godoc

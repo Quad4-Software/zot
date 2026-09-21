@@ -11,6 +11,18 @@ import (
 	"zotregistry.dev/zot/v2/pkg/log"
 )
 
+// dbStatusProvider is implemented by backend scanners that can report their
+// vulnerability DB freshness.
+type dbStatusProvider interface {
+	DBStatus() cvemodel.ScannerDBStatus
+}
+
+// DBStatusReporter is implemented by scanners that can report DB freshness
+// per enabled backend, used by the management endpoint for scanner health.
+type DBStatusReporter interface {
+	ScannerDBStatus() []cvemodel.ScannerDBStatus
+}
+
 // PerScannerReporter is implemented by scanners that can report results per
 // backend scanner, used by the management endpoint to surface disagreements.
 type PerScannerReporter interface {
@@ -177,6 +189,22 @@ func (m *MultiScanner) GetCachedResult(repo, digestStr string) map[string]zcommo
 	}
 
 	return merged
+}
+
+func (m *MultiScanner) ScannerDBStatus() []cvemodel.ScannerDBStatus {
+	statuses := make([]cvemodel.ScannerDBStatus, 0, len(m.backends))
+
+	for _, b := range m.backends {
+		if provider, ok := b.scanner.(dbStatusProvider); ok {
+			status := provider.DBStatus()
+			status.Name = b.name
+			statuses = append(statuses, status)
+		} else {
+			statuses = append(statuses, cvemodel.ScannerDBStatus{Name: b.name})
+		}
+	}
+
+	return statuses
 }
 
 func (m *MultiScanner) UpdateDB(ctx context.Context) error {

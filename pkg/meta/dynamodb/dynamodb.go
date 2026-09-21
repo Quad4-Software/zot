@@ -1512,6 +1512,12 @@ func (dwr *DynamoDB) FilterImageMeta(ctx context.Context, digests []string,
 	return results, nil
 }
 
+// GetTagHistory is not implemented for DynamoDB; tag movement logging is only
+// kept by the boltdb backend.
+func (dwr *DynamoDB) GetTagHistory(repo string) ([]mTypes.TagHistoryEntry, error) {
+	return nil, zerr.ErrNotImplemented
+}
+
 func (dwr *DynamoDB) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest,
 ) error {
 	ctx := context.Background()

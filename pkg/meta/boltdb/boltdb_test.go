@@ -1245,6 +1245,57 @@ func TestBoltDBCountRepos(t *testing.T) {
 	})
 }
 
+func TestBoltDBTagHistory(t *testing.T) {
+	Convey("Tag history records pushes and deletes", t, func() {
+		tmpDir := t.TempDir()
+		boltDBParams := boltdb.DBParameters{RootDir: tmpDir}
+		boltDriver, err := boltdb.GetBoltDriver(boltDBParams)
+		So(err, ShouldBeNil)
+
+		boltdbWrapper, err := boltdb.New(boltDriver, log.NewTestLogger())
+		So(err, ShouldBeNil)
+
+		boltdbWrapper.SetImageTrustStore(imgTrustStore{})
+
+		userAc := reqCtx.NewUserAccessControl()
+		userAc.SetUsername("testuser")
+
+		ctx := userAc.DeriveContext(context.Background())
+
+		image := CreateDefaultImage()
+		imageMeta := image.AsImageMeta()
+
+		history, err := boltdbWrapper.GetTagHistory("repo")
+		So(err, ShouldBeNil)
+		So(history, ShouldBeEmpty)
+
+		err = boltdbWrapper.SetRepoReference(ctx, "repo", "tag1", imageMeta)
+		So(err, ShouldBeNil)
+
+		err = boltdbWrapper.SetRepoReference(ctx, "repo", "tag2", imageMeta)
+		So(err, ShouldBeNil)
+
+		history, err = boltdbWrapper.GetTagHistory("repo")
+		So(err, ShouldBeNil)
+		So(history, ShouldHaveLength, 2)
+		// newest first
+		So(history[0].Tag, ShouldEqual, "tag2")
+		So(history[0].Action, ShouldEqual, "push")
+		So(history[0].Digest, ShouldEqual, imageMeta.Digest.String())
+		So(history[0].User, ShouldEqual, "testuser")
+		So(history[1].Tag, ShouldEqual, "tag1")
+
+		err = boltdbWrapper.RemoveRepoReference("repo", "tag1", imageMeta.Digest)
+		So(err, ShouldBeNil)
+
+		history, err = boltdbWrapper.GetTagHistory("repo")
+		So(err, ShouldBeNil)
+		So(history, ShouldHaveLength, 3)
+		So(history[0].Tag, ShouldEqual, "tag1")
+		So(history[0].Action, ShouldEqual, "delete")
+	})
+}
+
 func TestBoltDBFastRestartStamp(t *testing.T) {
 	Convey("FastRestartStamp", t, func() {
 		tmpDir := t.TempDir()

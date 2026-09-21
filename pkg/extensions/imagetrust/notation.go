@@ -452,6 +452,55 @@ func UploadCertificate(
 	return err
 }
 
+// GetCertificateNames lists stored certificate identifiers under
+// truststore/x509/{type}/{store}/ as "type/store/digest" paths.
+func (local *CertificateLocalStorage) GetCertificateNames() ([]string, error) {
+	notationDir, err := local.GetNotationDirPath()
+	if err != nil {
+		return []string{}, err
+	}
+
+	root := path.Join(notationDir, dir.TrustStoreDir, "x509")
+	names := []string{}
+
+	typeDirs, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return names, nil
+		}
+
+		return nil, err
+	}
+
+	for _, typeDir := range typeDirs {
+		if !typeDir.IsDir() {
+			continue
+		}
+
+		storeDirs, err := os.ReadDir(path.Join(root, typeDir.Name()))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, storeDir := range storeDirs {
+			if !storeDir.IsDir() {
+				continue
+			}
+
+			certs, err := os.ReadDir(path.Join(root, typeDir.Name(), storeDir.Name()))
+			if err != nil {
+				return nil, err
+			}
+
+			for _, cert := range certs {
+				names = append(names, path.Join(typeDir.Name(), storeDir.Name(), cert.Name()))
+			}
+		}
+	}
+
+	return names, nil
+}
+
 func (local *CertificateLocalStorage) StoreCertificate(
 	certificateContent []byte, truststoreType string,
 ) error {

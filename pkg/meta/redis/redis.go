@@ -1860,6 +1860,12 @@ func (rc *RedisDB) FilterImageMeta(ctx context.Context,
 	return imageMetaMap, nil
 }
 
+// GetTagHistory is not implemented for Redis; tag movement logging is only
+// kept by the boltdb backend.
+func (rc *RedisDB) GetTagHistory(repo string) ([]mTypes.TagHistoryEntry, error) {
+	return nil, zerr.ErrNotImplemented
+}
+
 // RemoveRepoReference removes the tag from RepoMetadata if the reference is a tag.
 // It also removes its corresponding digest from Statistics, Signatures and Referrers if there are no tags
 // pointing to it.

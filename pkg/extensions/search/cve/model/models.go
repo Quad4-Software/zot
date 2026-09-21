@@ -18,6 +18,17 @@ type ImageCVESummary struct {
 	MaxSeverity   string
 }
 
+// ScannerDBStatus reports the vulnerability DB freshness of one backend
+// scanner. Paths are intentionally absent so the status is safe to expose
+// through the management API.
+type ScannerDBStatus struct {
+	Name        string     `json:"name"`
+	DBVersion   string     `json:"dbVersion,omitempty"`
+	DBUpdatedAt *time.Time `json:"dbUpdatedAt,omitempty"`
+	NextUpdate  *time.Time `json:"nextUpdate,omitempty"`
+	Error       string     `json:"error,omitempty"`
+}
+
 // NotSpecified is used in place of Package.FixedVersion/PackagePath when the
 // scanner has no fix available or no path, so the field is never empty.
 const NotSpecified = "Not Specified"

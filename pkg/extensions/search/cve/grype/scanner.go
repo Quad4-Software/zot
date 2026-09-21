@@ -57,6 +57,7 @@ type Scanner struct {
 	// provider is never closed while a scan is using it.
 	dbLock    *sync.Mutex
 	providers map[string]vulnerability.Provider
+	statuses  map[string]*vulnerability.ProviderStatus
 	distCfg   v6dist.Config
 	roots     []string
 }
@@ -88,6 +89,7 @@ func NewScanner(storeController storage.StoreController, metaDB mTypes.MetaDB,
 		log:             log,
 		dbLock:          &sync.Mutex{},
 		providers:       map[string]vulnerability.Provider{},
+		statuses:        map[string]*vulnerability.ProviderStatus{},
 		distCfg:         distCfg,
 		roots:           storeRoots(storeController),
 	}
@@ -136,14 +138,54 @@ func (scanner *Scanner) getProvider(rootDir string) (vulnerability.Provider, err
 		return provider, nil
 	}
 
-	provider, _, err := anchoregrype.LoadVulnerabilityDB(scanner.distCfg, scanner.installCfg(rootDir), false)
+	provider, status, err := anchoregrype.LoadVulnerabilityDB(scanner.distCfg, scanner.installCfg(rootDir), false)
 	if err != nil {
 		return nil, err
 	}
 
 	scanner.providers[rootDir] = provider
+	scanner.statuses[rootDir] = status
 
 	return provider, nil
+}
+
+// DBStatus reports the grype DB freshness for the management endpoint. The
+// DB is per storage root; the reported values are the conservative merge of
+// all loaded providers (oldest build time, joined errors).
+func (scanner *Scanner) DBStatus() cvemodel.ScannerDBStatus {
+	scanner.dbLock.Lock()
+	defer scanner.dbLock.Unlock()
+
+	status := cvemodel.ScannerDBStatus{}
+
+	var errs []error
+
+	for _, providerStatus := range scanner.statuses {
+		if providerStatus == nil {
+			continue
+		}
+
+		if providerStatus.Error != nil {
+			errs = append(errs, providerStatus.Error)
+
+			continue
+		}
+
+		if status.DBVersion == "" && providerStatus.SchemaVersion != "" {
+			status.DBVersion = providerStatus.SchemaVersion
+		}
+
+		if !providerStatus.Built.IsZero() && (status.DBUpdatedAt == nil || providerStatus.Built.Before(*status.DBUpdatedAt)) {
+			built := providerStatus.Built
+			status.DBUpdatedAt = &built
+		}
+	}
+
+	if len(errs) > 0 {
+		status.Error = errors.Join(errs...).Error()
+	}
+
+	return status
 }
 
 // UpdateDB downloads the grype vulnerability DB under each store root and
@@ -155,7 +197,7 @@ func (scanner *Scanner) UpdateDB(ctx context.Context) error {
 	for _, rootDir := range scanner.roots {
 		scanner.log.Debug().Str("dbDir", rootDir).Msg("updating grype vulnerability DB")
 
-		provider, _, err := anchoregrype.LoadVulnerabilityDB(scanner.distCfg, scanner.installCfg(rootDir), true)
+		provider, status, err := anchoregrype.LoadVulnerabilityDB(scanner.distCfg, scanner.installCfg(rootDir), true)
 		if err != nil {
 			scanner.log.Error().Err(err).Str("dbDir", rootDir).
 				Msg("failed to download grype vulnerability DB")
@@ -168,6 +210,7 @@ func (scanner *Scanner) UpdateDB(ctx context.Context) error {
 		}
 
 		scanner.providers[rootDir] = provider
+		scanner.statuses[rootDir] = status
 	}
 
 	scanner.base.PurgeCache()

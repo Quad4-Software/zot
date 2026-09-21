@@ -45,6 +45,7 @@ import (
 	mTypes "zotregistry.dev/zot/v2/pkg/meta/types"
 	"zotregistry.dev/zot/v2/pkg/storage"
 	storageConstants "zotregistry.dev/zot/v2/pkg/storage/constants"
+	storageTypes "zotregistry.dev/zot/v2/pkg/storage/types"
 )
 
 const cacheSize = 1000000
@@ -1310,6 +1311,57 @@ func (scanner Scanner) updateDBInternal(ctx context.Context, dbDir string) error
 	scanner.log.Debug().Str("dbDir", dbDir).Msg("finished downloading trivy-db to destination dir")
 
 	return nil
+}
+
+// DBStatus reports the trivy DB freshness for the management endpoint. The
+// DB is per storage root; the reported values are the conservative merge of
+// all stores (oldest update time, joined errors).
+func (scanner Scanner) DBStatus() cvemodel.ScannerDBStatus {
+	status := cvemodel.ScannerDBStatus{}
+
+	stores := []storageTypes.ImageStore{}
+	if scanner.storeController.DefaultStore != nil {
+		stores = append(stores, scanner.storeController.DefaultStore)
+	}
+
+	if scanner.storeController.SubStore != nil {
+		for _, storage := range scanner.storeController.SubStore {
+			stores = append(stores, storage)
+		}
+	}
+
+	var errs []error
+
+	for _, imgStore := range stores {
+		dbDir := path.Join(imgStore.RootDir(), "_trivy", "db")
+
+		meta, err := metadata.NewClient(dbDir).Get()
+		if err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+
+		if status.DBVersion == "" && meta.Version > 0 {
+			status.DBVersion = strconv.Itoa(meta.Version)
+		}
+
+		if !meta.DownloadedAt.IsZero() && (status.DBUpdatedAt == nil || meta.DownloadedAt.Before(*status.DBUpdatedAt)) {
+			updatedAt := meta.DownloadedAt
+			status.DBUpdatedAt = &updatedAt
+		}
+
+		if !meta.NextUpdate.IsZero() && (status.NextUpdate == nil || meta.NextUpdate.Before(*status.NextUpdate)) {
+			nextUpdate := meta.NextUpdate
+			status.NextUpdate = &nextUpdate
+		}
+	}
+
+	if len(errs) > 0 {
+		status.Error = errors.Join(errs...).Error()
+	}
+
+	return status
 }
 
 // checkDBPresence errors if the DB metadata files cannot be accessed.

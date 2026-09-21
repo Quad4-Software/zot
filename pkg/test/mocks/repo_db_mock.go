@@ -99,6 +99,7 @@ type MetaDBMock struct {
 	FilterImageMetaFn func(ctx context.Context, digests []string) (map[string]mTypes.ImageMeta, error)
 
 	RemoveRepoReferenceFn func(repo, reference string, manifestDigest godigest.Digest) error
+	GetTagHistoryFn       func(repo string) ([]mTypes.TagHistoryEntry, error)
 
 	GetFullImageMetaFn func(ctx context.Context, repo string, tag string) (mTypes.FullImageMeta, error)
 
@@ -475,6 +476,14 @@ func (sdm MetaDBMock) RemoveRepoReference(repo, reference string, manifestDigest
 	}
 
 	return nil
+}
+
+func (sdm MetaDBMock) GetTagHistory(repo string) ([]mTypes.TagHistoryEntry, error) {
+	if sdm.GetTagHistoryFn != nil {
+		return sdm.GetTagHistoryFn(repo)
+	}
+
+	return nil, nil
 }
 
 func (sdm MetaDBMock) GetFullImageMeta(ctx context.Context, repo string, tag string,

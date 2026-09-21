@@ -147,6 +147,11 @@ type MetaDB interface { //nolint:interfacebloat
 	*/
 	RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest) error
 
+	// GetTagHistory returns the recorded tag-to-digest movements for a repo,
+	// newest first. Backends that do not keep a history return
+	// ErrNotImplemented.
+	GetTagHistory(repo string) ([]TagHistoryEntry, error)
+
 	// ResetRepoReferences resets layout specific data (tags, signatures, referrers, etc.) but keep user and image
 	// specific metadata such as star count, downloads other statistics.
 	// tagsToKeep is a set of tag names that should be preserved (tags that exist in storage).
@@ -286,6 +291,17 @@ type (
 	Tag         = string
 	ImageDigest = string
 )
+
+// TagHistoryEntry records one tag-to-digest movement. Action is "push" for a
+// tag create or repoint and "delete" for tag removal.
+type TagHistoryEntry struct {
+	Tag       string    `json:"tag"`
+	Digest    string    `json:"digest"`
+	MediaType string    `json:"mediaType,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+	User      string    `json:"user,omitempty"`
+	Action    string    `json:"action"`
+}
 
 type RepoMeta struct {
 	Name string
