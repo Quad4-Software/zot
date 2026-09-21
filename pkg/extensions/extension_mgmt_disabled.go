@@ -6,14 +6,19 @@ import (
 	"github.com/gorilla/mux"
 
 	"zotregistry.dev/zot/v2/pkg/api/config"
+	"zotregistry.dev/zot/v2/pkg/extensions/monitoring"
 	"zotregistry.dev/zot/v2/pkg/log"
+	mTypes "zotregistry.dev/zot/v2/pkg/meta/types"
+	"zotregistry.dev/zot/v2/pkg/storage"
 )
 
 func IsBuiltWithMGMTExtension() bool {
 	return false
 }
 
-func SetupMgmtRoutes(config *config.Config, router *mux.Router, log log.Logger) {
+func SetupMgmtRoutes(config *config.Config, router *mux.Router, storeController storage.StoreController,
+	metaDB mTypes.MetaDB, audit *log.Logger, metrics monitoring.MetricServer, log log.Logger,
+) {
 	log.Warn().Msg("skipping setting up mgmt routes because given zot binary doesn't include this feature," +
 		"please build a binary that does so")
 }

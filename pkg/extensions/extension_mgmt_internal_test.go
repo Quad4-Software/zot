@@ -4,10 +4,17 @@ package extensions
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"zotregistry.dev/zot/v2/pkg/api/config"
+	"zotregistry.dev/zot/v2/pkg/log"
+	reqCtx "zotregistry.dev/zot/v2/pkg/requestcontext"
+	"zotregistry.dev/zot/v2/pkg/storage"
 )
 
 func TestAuthMarshalJSONNilHTPasswd(t *testing.T) {
@@ -86,4 +93,50 @@ func TestAuthMarshalJSONOpenIDOnlyEmptyHTPasswd(t *testing.T) {
 	providers, ok := openid["providers"].(map[string]any)
 	require.True(t, ok)
 	assert.Contains(t, providers, "oidc")
+}
+
+func TestHandleRunGCNoAuthzAccepted(t *testing.T) {
+	// without accessControl configured, authzInfo is nil and every request is
+	// admin under zot's default-permit semantics
+	mgmt := &Mgmt{Conf: &config.Config{}, Log: log.NewLogger("debug", "")}
+
+	req := httptest.NewRequest(http.MethodPost, "/v2/_zot/ext/mgmt/gc", nil)
+	recorder := httptest.NewRecorder()
+
+	mgmt.HandleRunGC(recorder, req)
+	assert.Equal(t, http.StatusAccepted, recorder.Code)
+}
+
+func TestHandleRunGCAnonymousNotAdmin(t *testing.T) {
+	t.Parallel()
+
+	mgmt := &Mgmt{Conf: &config.Config{}, Log: log.NewLogger("debug", "")}
+
+	req := httptest.NewRequest(http.MethodPost, "/v2/_zot/ext/mgmt/gc", nil)
+
+	userAc := reqCtx.NewUserAccessControl()
+	userAc.SetIsAdmin(false)
+	userAc.SaveOnRequest(req)
+
+	recorder := httptest.NewRecorder()
+	mgmt.HandleRunGC(recorder, req)
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+}
+
+func TestHandleRunGCAdminAccepted(t *testing.T) {
+	mgmt := &Mgmt{
+		Conf:            &config.Config{},
+		StoreController: storage.StoreController{},
+		Log:             log.NewLogger("debug", ""),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v2/_zot/ext/mgmt/gc", nil)
+
+	userAc := reqCtx.NewUserAccessControl()
+	userAc.SetIsAdmin(true)
+	userAc.SaveOnRequest(req)
+
+	recorder := httptest.NewRecorder()
+	mgmt.HandleRunGC(recorder, req)
+	assert.Equal(t, http.StatusAccepted, recorder.Code)
 }
