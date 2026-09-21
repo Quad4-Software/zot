@@ -161,6 +161,14 @@ jobs:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
+      - name: Scan image for vulnerabilities
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          fail-build: false
+          output-format: json
+          output-file: grype.json
+
       - name: Attest OpenVEX
         env:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -171,6 +179,21 @@ jobs:
             --arg purl "pkg:oci/zot@${IMAGE_DIGEST}?repository_url=${IMAGE_NAME}" \
             '.["@id"] = $id | .timestamp = $ts | .version = 1 | .products = [$purl]' \
             build/openvex.json > openvex.json
+
+          # findings not covered by an authored statement are recorded as
+          # under_investigation; triage them in build/openvex.json
+          jq -n \
+            --slurpfile vex openvex.json \
+            --slurpfile grype grype.json \
+            --arg purl "pkg:oci/zot@${IMAGE_DIGEST}?repository_url=${IMAGE_NAME}" \
+            '($vex[0].statements // []) as $authored |
+             ($authored | map(.vulnerability.name // .vulnerability["@id"] // .vulnerability)) as $known |
+             (($grype[0].matches // []) | map(.vulnerability.id) | unique |
+               map(select(. as $v | ($known | index($v)) == null) |
+                 {vulnerability: {name: .}, products: [$purl], status: "under_investigation"})) as $auto |
+             $vex[0] | .statements = ($authored + $auto)' \
+            > openvex.merged.json && mv openvex.merged.json openvex.json
+
           cosign attest --yes --predicate openvex.json --type openvex "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
       - name: Upload SBOM and VEX artifacts
