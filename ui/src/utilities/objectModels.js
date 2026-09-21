@@ -163,4 +163,13 @@ const mapReferrer = (referrer) => ({
   annotations: referrer.Annotations?.map((annotation) => ({ key: annotation.Key, value: annotation.Value }))
 });
 
-export { mapToRepo, mapToImage, mapToRepoFromRepoInfo, mapCVEInfo, mapAllCVEInfo, mapReferrer, mapToManifest };
+export {
+  mapToRepo,
+  mapToImage,
+  mapToRepoFromRepoInfo,
+  mapCVEInfo,
+  mapAllCVEInfo,
+  mapReferrer,
+  mapToManifest,
+  mapSignatureInfo
+};

@@ -5,16 +5,23 @@ import { Link } from 'react-router';
 import { api, endpoints } from '../../api';
 import { host } from '../../host';
 import transform from 'utilities/transform';
+import { mapSignatureInfo } from 'utilities/objectModels';
+import { SignatureIconCheck, VulnerabilityChipCheck } from 'utilities/vulnerabilityAndSignatureCheck';
 import { isEmpty } from 'lodash';
 
 // components
 import {
+  Alert,
   Button,
   Card,
   CardContent,
   Chip,
   Collapse,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   IconButton,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -29,6 +36,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import LabelIcon from '@mui/icons-material/Label';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteTag from 'components/Shared/DeleteTag';
 import Loading from 'components/Shared/Loading';
 
@@ -108,6 +118,92 @@ const useStyles = makeStyles((theme) => ({
 
 const PAGE_SIZE = 15;
 
+const MANIFEST_ACCEPT = [
+  'application/vnd.oci.image.index.v1+json',
+  'application/vnd.oci.image.manifest.v1+json',
+  'application/vnd.docker.distribution.manifest.list.v2+json',
+  'application/vnd.docker.distribution.manifest.v2+json'
+].join(',');
+
+function LabelsButton({ repo, tag }) {
+  const classes = useStyles();
+  const [open, setOpen] = useState(false);
+  const [labels, setLabels] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    setLabels(null);
+    setError(null);
+    setOpen(true);
+
+    const manifestCfg = { ...api.getRequestCfg(), headers: { Accept: MANIFEST_ACCEPT } };
+    api
+      .get(`${host()}/v2/${repo}/manifests/${tag}`, null, manifestCfg)
+      .then(async (response) => {
+        const manifest = response.data;
+        let found = { ...(manifest?.annotations || {}) };
+        const mediaType = manifest?.mediaType || '';
+        // image indexes carry annotations; single manifests may also have
+        // labels baked into the config blob
+        if (!mediaType.includes('index') && !mediaType.includes('manifest.list') && manifest?.config?.digest) {
+          const configRes = await api.get(
+            `${host()}/v2/${repo}/blobs/${manifest.config.digest}`,
+            null,
+            api.getRequestCfg()
+          );
+          found = { ...(configRes.data?.config?.Labels || {}), ...found };
+        }
+        setLabels(found);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError('failed to load labels');
+      });
+  };
+
+  return (
+    <>
+      <Tooltip title="Image labels">
+        <IconButton className={classes.icons} size="small" onClick={load} data-testid={`labels-${tag}`}>
+          <LabelIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {repo}:{tag}
+        </DialogTitle>
+        <DialogContent>
+          {error && <Typography className={classes.errorText}>{error}</Typography>}
+          {!error && labels === null && <Loading />}
+          {!error && labels !== null && isEmpty(labels) && <Typography>no labels on this image</Typography>}
+          {!error && !isEmpty(labels) && (
+            <Table size="small">
+              <TableBody>
+                {Object.entries(labels).map(([key, value]) => (
+                  <TableRow key={key}>
+                    <TableCell
+                      className={classes.tableCell}
+                      sx={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8rem', width: '45%' }}
+                    >
+                      {key}
+                    </TableCell>
+                    <TableCell
+                      className={classes.tableCell}
+                      sx={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8rem', wordBreak: 'break-all' }}
+                    >
+                      {value}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function TagRows({ repo }) {
   const classes = useStyles();
   const [images, setImages] = useState(null);
@@ -128,7 +224,7 @@ function TagRows({ repo }) {
   if (error) {
     return (
       <TableRow>
-        <TableCell colSpan={5} className={classes.tableCell}>
+        <TableCell colSpan={7} className={classes.tableCell}>
           <Typography className={classes.errorText}>{error}</Typography>
         </TableCell>
       </TableRow>
@@ -138,7 +234,7 @@ function TagRows({ repo }) {
   if (images === null) {
     return (
       <TableRow>
-        <TableCell colSpan={5} className={classes.tableCell}>
+        <TableCell colSpan={7} className={classes.tableCell}>
           <Loading />
         </TableCell>
       </TableRow>
@@ -148,7 +244,7 @@ function TagRows({ repo }) {
   if (isEmpty(images)) {
     return (
       <TableRow>
-        <TableCell colSpan={5} className={classes.tableCell}>
+        <TableCell colSpan={7} className={classes.tableCell}>
           <Typography className={classes.errorText}>no tags found</Typography>
         </TableCell>
       </TableRow>
@@ -165,7 +261,16 @@ function TagRows({ repo }) {
       <TableCell className={classes.tableCell}>
         {transform.formatBytes(Number(image.Manifests?.reduce((acc, m) => acc + Number(m.Size || 0), 0) || 0))}
       </TableCell>
+      <TableCell className={classes.tableCell}>
+        {image.Vulnerabilities?.MaxSeverity != null && (
+          <VulnerabilityChipCheck vulnerabilitySeverity={image.Vulnerabilities.MaxSeverity} />
+        )}
+      </TableCell>
+      <TableCell className={classes.tableCell}>
+        <SignatureIconCheck signatureInfo={image.SignatureInfo?.map((si) => mapSignatureInfo(si))} />
+      </TableCell>
       <TableCell className={classes.tableCell} align="right">
+        <LabelsButton repo={repo} tag={image.Tag} />
         {image.IsDeletable && (
           <DeleteTag
             repo={repo}
@@ -186,6 +291,8 @@ function Admin() {
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [gcRunning, setGcRunning] = useState(false);
+  const [snack, setSnack] = useState({ open: false, severity: 'info', message: '' });
 
   const loadServerInfo = () => {
     api
@@ -227,6 +334,24 @@ function Admin() {
     return methods.length ? methods.join(', ') : 'none';
   };
 
+  const runGC = () => {
+    setGcRunning(true);
+    api
+      .post(`${host()}${endpoints.runGC}`)
+      .then(() => setSnack({ open: true, severity: 'success', message: 'Garbage collection started' }))
+      .catch((err) => {
+        const status = err?.response?.status;
+        const message =
+          status === 403
+            ? 'Admin access required to run GC'
+            : status === 409
+              ? 'A GC run is already in progress'
+              : 'Failed to start GC';
+        setSnack({ open: true, severity: 'error', message });
+      })
+      .finally(() => setGcRunning(false));
+  };
+
   return (
     <div className={classes.pageWrapper} data-testid="admin-container">
       <div className={classes.titleRow}>
@@ -250,7 +375,78 @@ function Admin() {
               <Chip label={`${serverInfo.binaryType || ''} build`} variant="outlined" />
               <Chip label={`dist-spec ${serverInfo.distSpecVersion || ''}`} variant="outlined" />
               <Chip label={`auth: ${authMethods()}`} variant="outlined" />
+              {serverInfo.http?.auth?.apikey && (
+                <Chip
+                  icon={<VpnKeyIcon />}
+                  label="API keys"
+                  variant="outlined"
+                  component={Link}
+                  to="/user/apikey"
+                  clickable
+                />
+              )}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {serverInfo?.storage && (serverInfo.storage.gc || !isEmpty(serverInfo.storage.retention)) && (
+        <Card className={classes.card}>
+          <CardContent>
+            <Typography className={classes.cardTitle}>Garbage collection</Typography>
+            <div className={classes.infoGrid}>
+              <Chip label={`gc: ${serverInfo.storage.gc ? 'enabled' : 'disabled'}`} variant="outlined" />
+              {serverInfo.storage.gcInterval && (
+                <Chip label={`interval ${serverInfo.storage.gcInterval}`} variant="outlined" />
+              )}
+              <Chip label={`dedupe: ${serverInfo.storage.dedupe ? 'on' : 'off'}`} variant="outlined" />
+            </div>
+            {!isEmpty(serverInfo.storage.retention) && (
+              <Table size="small" sx={{ marginTop: '1rem' }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell className={classes.tableHeadCell}>Repositories</TableCell>
+                    <TableCell className={classes.tableHeadCell}>Rules</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {serverInfo.storage.retention.map((policy, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell
+                        className={classes.tableCell}
+                        sx={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8rem' }}
+                      >
+                        {(policy.repositories || []).join(', ') || '**'}
+                      </TableCell>
+                      <TableCell className={classes.tableCell}>
+                        {[
+                          policy.keepTags > 0
+                            ? `keep ${policy.keepTags} tag rule${policy.keepTags > 1 ? 's' : ''}`
+                            : null,
+                          policy.deleteUntagged ? 'delete untagged' : null,
+                          policy.deleteReferrers ? 'delete referrers' : null
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || 'none'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            {serverInfo.storage.gc && (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<CleaningServicesIcon />}
+                disabled={gcRunning}
+                onClick={runGC}
+                sx={{ marginTop: '1rem' }}
+                data-testid="run-gc"
+              >
+                Run GC now
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -319,6 +515,19 @@ function Admin() {
                         <TableCell className={classes.tableCell} colSpan={5} sx={{ padding: 0 }}>
                           <Collapse in={expanded === repo.Name} timeout="auto" unmountOnExit>
                             <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell className={classes.tableHeadCell}></TableCell>
+                                  <TableCell className={classes.tableHeadCell}>Tag</TableCell>
+                                  <TableCell className={classes.tableHeadCell}>Digest</TableCell>
+                                  <TableCell className={classes.tableHeadCell}>Size</TableCell>
+                                  <TableCell className={classes.tableHeadCell}>CVEs</TableCell>
+                                  <TableCell className={classes.tableHeadCell}>Trust</TableCell>
+                                  <TableCell className={classes.tableHeadCell} align="right">
+                                    Actions
+                                  </TableCell>
+                                </TableRow>
+                              </TableHead>
                               <TableBody>
                                 <TagRows repo={repo.Name} />
                               </TableBody>
@@ -363,6 +572,20 @@ function Admin() {
           </div>
         </CardContent>
       </Card>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
+      >
+        <Alert
+          severity={snack.severity}
+          variant="filled"
+          onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </div>
   );
 }
