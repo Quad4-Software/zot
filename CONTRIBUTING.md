@@ -1,28 +1,19 @@
 # Getting Started
 
-## Fork Repository
+This repository is Quad4's fork of [zot](https://github.com/project-zot/zot).
+To contribute to upstream zot itself, see the upstream
+[CONTRIBUTING.md](https://github.com/project-zot/zot/blob/main/CONTRIBUTING.md).
 
-[Fork](https://github.com/project-zot/zot) the zot repository on GitHub to your personal account.
-
-```
-#Set golang environment
-export GOPATH=$HOME/go
-mkdir -p $GOPATH/src/github.com/project-zot
-
-#Get code
-go get github.com/project-zot/zot
-cd $GOPATH/src/github.com/project-zot/zot
-
-#Track repository under your personal account
-git config push.default nothing # Anything to avoid pushing to project-zot/zot by default
-git remote rename origin project-zot
-git remote add $USER git@github.com:$USER/zot.git
-git fetch $USER
+## Clone Repository
 
 ```
+git clone git@github.com:Quad4-Software/zot.git
+cd zot
 
-NOTES: Note that GOPATH can be any directory, the example above uses $HOME/go.
-Change $USER above to your own GitHub username.
+#Track upstream
+git remote add upstream https://github.com/project-zot/zot.git
+git fetch upstream
+```
 
 ## Build
 
@@ -157,15 +148,13 @@ It can help us understand and fix your issue faster.
 Update the documentation if you are creating or changing features. Good
 documentation is as important as the code itself.
 
-The main location for the documentation is the website repository. The images
-referred to in documents can be placed in docs/img in that repo.
-
-Documents are written with Markdown. See Writing on GitHub for more details.
+Upstream documentation lives at https://zotregistry.dev. Document fork-specific
+changes in README.md under "Changes from upstream".
 
 ## Design New Features
 
-You can propose new designs for existing zot features. You can also design
-entirely new features, Please submit a proposal in GitHub issues. zot
-maintainers will review this proposal as soon as possible. This is necessary to
+You can propose new designs for existing features. You can also design
+entirely new features, Please submit a proposal in GitHub issues. Maintainers
+will review this proposal as soon as possible. This is necessary to
 ensure the overall architecture is consistent and to avoid duplicated work in
 the roadmap.
