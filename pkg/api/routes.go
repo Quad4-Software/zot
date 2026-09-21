@@ -1084,7 +1084,7 @@ func (rh *RouteHandler) DeleteManifest(response http.ResponseWriter, request *ht
 	}
 
 	if rh.c.MetaDB != nil {
-		err := meta.OnDeleteManifest(name, reference, mediaType, manifestDigest, manifestBlob,
+		err := meta.OnDeleteManifest(request.Context(), name, reference, mediaType, manifestDigest, manifestBlob,
 			rh.c.StoreController, rh.c.MetaDB, rh.c.Log)
 		if err != nil {
 			// The image store manifest may have been restored (or restore may itself have

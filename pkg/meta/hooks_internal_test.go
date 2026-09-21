@@ -426,7 +426,7 @@ func TestOnDeleteManifestSignatureMetaFailure(t *testing.T) {
 		}
 
 		sc := storage.StoreController{DefaultStore: &imgStore}
-		err = OnDeleteManifest("repo", referrerDigest.String(), ispec.MediaTypeImageManifest, referrerDigest,
+		err = OnDeleteManifest(context.Background(), "repo", referrerDigest.String(), ispec.MediaTypeImageManifest, referrerDigest,
 			referrerBody, sc, metaDB, logger)
 
 		So(errors.Is(err, errHookInternal), ShouldBeTrue)

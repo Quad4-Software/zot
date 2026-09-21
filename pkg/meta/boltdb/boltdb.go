@@ -260,10 +260,12 @@ func (bdw *BoltDB) SetRepoReference(ctx context.Context, repo string, reference 
 
 		// 3. Update tag
 		if !common.ReferenceIsDigest(reference) {
+			existingTag, tagExists := protoRepoMeta.Tags[reference]
+
 			// Set TaggedTimestamp to now if this is a new tag, otherwise preserve existing timestamp
 			// For old data without TaggedTimestamp, leave it nil so it falls back to PushTimestamp
 			var taggedTimestamp *timestamppb.Timestamp
-			if existingTag, exists := protoRepoMeta.Tags[reference]; exists {
+			if tagExists {
 				// Tag exists - preserve TaggedTimestamp if present, otherwise leave nil (old data)
 				if existingTag.GetTaggedTimestamp() != nil {
 					taggedTimestamp = existingTag.GetTaggedTimestamp()
@@ -279,15 +281,22 @@ func (bdw *BoltDB) SetRepoReference(ctx context.Context, repo string, reference 
 				TaggedTimestamp: taggedTimestamp,
 			}
 
-			if err := appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
-				Tag:       reference,
-				Digest:    imageMeta.Digest.String(),
-				MediaType: imageMeta.MediaType,
-				Timestamp: time.Now(),
-				User:      userid,
-				Action:    "push",
-			}); err != nil {
-				return err
+			// Only record a movement when the tag actually changed: metaDB
+			// re-parses and idempotent repushes must not spam the log.
+			if !tagExists || existingTag.Digest != imageMeta.Digest.String() {
+				entryTime := options.PushTimestamp
+				if entryTime.IsZero() {
+					entryTime = time.Now()
+				}
+
+				bdw.appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
+					Tag:       reference,
+					Digest:    imageMeta.Digest.String(),
+					MediaType: imageMeta.MediaType,
+					Timestamp: entryTime,
+					User:      userid,
+					Action:    mTypes.TagHistoryActionPush,
+				})
 			}
 		}
 
@@ -1175,6 +1184,7 @@ func (bdw *BoltDB) DeleteRepoMeta(repo string) error {
 		repoBuck := tx.Bucket([]byte(RepoMetaBuck))
 		repoBlobsBuck := tx.Bucket([]byte(RepoBlobsBuck))
 		repoLastUpdatedBuck := repoBlobsBuck.Bucket([]byte(RepoLastUpdatedBuck))
+		tagHistoryBuck := tx.Bucket([]byte(TagHistoryBuck))
 
 		err := repoBuck.Delete([]byte(repo))
 		if err != nil {
@@ -1184,6 +1194,12 @@ func (bdw *BoltDB) DeleteRepoMeta(repo string) error {
 		err = repoBlobsBuck.Delete([]byte(repo))
 		if err != nil {
 			return err
+		}
+
+		if tagHistoryBuck != nil {
+			if err := tagHistoryBuck.Delete([]byte(repo)); err != nil {
+				return err
+			}
 		}
 
 		return repoLastUpdatedBuck.Delete([]byte(repo))
@@ -1439,7 +1455,11 @@ func (bdw *BoltDB) UpdateSignaturesValidity(ctx context.Context, repo string, ma
 	return err
 }
 
-func (bdw *BoltDB) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest) error {
+func (bdw *BoltDB) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest,
+	opts ...mTypes.RemoveRepoReferenceOption,
+) error {
+	options := mTypes.ApplyRemoveRepoReferenceOptions(opts...)
+
 	err := bdw.DB.Update(func(tx *bbolt.Tx) error {
 		repoMetaBuck := tx.Bucket([]byte(RepoMetaBuck))
 		imageMetaBuck := tx.Bucket([]byte(ImageMetaBuck))
@@ -1493,32 +1513,45 @@ func (bdw *BoltDB) RemoveRepoReference(repo, reference string, manifestDigest go
 		}
 
 		if !common.ReferenceIsDigest(reference) {
-			delete(protoRepoMeta.Tags, reference)
-
-			if err := appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
-				Tag:       reference,
-				Digest:    manifestDigest.String(),
-				Timestamp: time.Now(),
-				Action:    "delete",
-			}); err != nil {
-				return err
+			// Record the digest the tag actually pointed to: metadb may still map
+			// it to a different digest than the caller's, and a missing tag must
+			// not produce a phantom delete entry.
+			if desc, exists := protoRepoMeta.Tags[reference]; exists {
+				bdw.appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
+					Tag:       reference,
+					Digest:    desc.Digest,
+					MediaType: desc.MediaType,
+					Timestamp: time.Now(),
+					User:      options.UserID,
+					Action:    mTypes.TagHistoryActionDelete,
+				})
 			}
+
+			delete(protoRepoMeta.Tags, reference)
 		} else {
-			// remove all tags pointing to this digest
+			// remove all tags pointing to this digest, in a stable order
+			tags := make([]string, 0, len(protoRepoMeta.Tags))
 			for tag, desc := range protoRepoMeta.Tags {
 				if desc.Digest == reference {
-					delete(protoRepoMeta.Tags, tag)
-
-					if err := appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
-						Tag:       tag,
-						Digest:    desc.Digest,
-						MediaType: desc.MediaType,
-						Timestamp: time.Now(),
-						Action:    "delete",
-					}); err != nil {
-						return err
-					}
+					tags = append(tags, tag)
 				}
+			}
+
+			slices.Sort(tags)
+
+			for _, tag := range tags {
+				desc := protoRepoMeta.Tags[tag]
+
+				bdw.appendTagHistory(tx, repo, mTypes.TagHistoryEntry{
+					Tag:       tag,
+					Digest:    desc.Digest,
+					MediaType: desc.MediaType,
+					Timestamp: time.Now(),
+					User:      options.UserID,
+					Action:    mTypes.TagHistoryActionDelete,
+				})
+
+				delete(protoRepoMeta.Tags, tag)
 			}
 		}
 
@@ -2216,6 +2249,11 @@ func (bdw *BoltDB) ResetDB() error {
 			return err
 		}
 
+		err = resetBucket(transaction, TagHistoryBuck)
+		if err != nil {
+			return err
+		}
+
 		if versionBuck := transaction.Bucket([]byte(VersionBucket)); versionBuck != nil {
 			if err := versionBuck.Delete([]byte(mTypes.FastRestartStampKey)); err != nil {
 				return err
@@ -2278,18 +2316,22 @@ func (bdw *BoltDB) Close() error {
 const tagHistoryMaxEntries = 200
 
 // appendTagHistory appends an entry to the repo's tag movement log inside the
-// current transaction, trimming the oldest entries past the bound.
-func appendTagHistory(tx *bbolt.Tx, repo string, entry mTypes.TagHistoryEntry) error {
+// current transaction, trimming the oldest entries past the bound. History is
+// auxiliary data: a corrupt stored blob is dropped rather than failing the
+// push or delete that triggered the write.
+func (bdw *BoltDB) appendTagHistory(tx *bbolt.Tx, repo string, entry mTypes.TagHistoryEntry) {
 	buck := tx.Bucket([]byte(TagHistoryBuck))
 	if buck == nil {
-		return nil
+		return
 	}
 
 	entries := []mTypes.TagHistoryEntry{}
 
 	if blob := buck.Get([]byte(repo)); blob != nil {
 		if err := json.Unmarshal(blob, &entries); err != nil {
-			return err
+			bdw.Log.Error().Err(err).Str("repo", repo).Msg("corrupt tag history, starting fresh")
+
+			entries = []mTypes.TagHistoryEntry{}
 		}
 	}
 
@@ -2301,10 +2343,14 @@ func appendTagHistory(tx *bbolt.Tx, repo string, entry mTypes.TagHistoryEntry) e
 
 	blob, err := json.Marshal(entries)
 	if err != nil {
-		return err
+		bdw.Log.Error().Err(err).Str("repo", repo).Msg("failed to encode tag history")
+
+		return
 	}
 
-	return buck.Put([]byte(repo), blob)
+	if err := buck.Put([]byte(repo), blob); err != nil {
+		bdw.Log.Error().Err(err).Str("repo", repo).Msg("failed to write tag history")
+	}
 }
 
 // GetTagHistory returns the tag movement log for a repo, newest first.

@@ -470,7 +470,9 @@ func (sdm MetaDBMock) FilterImageMeta(ctx context.Context, digests []string,
 	return map[string]mTypes.ImageMeta{}, nil
 }
 
-func (sdm MetaDBMock) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest) error {
+func (sdm MetaDBMock) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest,
+	_ ...mTypes.RemoveRepoReferenceOption,
+) error {
 	if sdm.RemoveRepoReferenceFn != nil {
 		return sdm.RemoveRepoReferenceFn(repo, reference, manifestDigest)
 	}

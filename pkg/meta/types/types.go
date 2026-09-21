@@ -145,7 +145,8 @@ type MetaDB interface { //nolint:interfacebloat
 	   If the reference is a digest then it will remove the digest from Statistics, Signatures and Referrers only
 	   if there are no tags pointing to the digest, otherwise it's noop
 	*/
-	RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest) error
+	RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest,
+		opts ...RemoveRepoReferenceOption) error
 
 	// GetTagHistory returns the recorded tag-to-digest movements for a repo,
 	// newest first. Backends that do not keep a history return
@@ -279,6 +280,35 @@ func ApplySetRepoReferenceOptions(opts ...SetRepoReferenceOption) SetRepoReferen
 	return options
 }
 
+// RemoveRepoReferenceOptions holds optional per-call hints for RemoveRepoReference.
+type RemoveRepoReferenceOptions struct {
+	// UserID records who performed the removal in the tag history, when the
+	// backend keeps one. Empty means unknown (internal callers such as GC).
+	UserID string
+}
+
+// RemoveRepoReferenceOption sets an optional hint on RemoveRepoReferenceOptions.
+type RemoveRepoReferenceOption func(*RemoveRepoReferenceOptions)
+
+// WithActorUserID hints which user initiated the removal.
+func WithActorUserID(userid string) RemoveRepoReferenceOption {
+	return func(opts *RemoveRepoReferenceOptions) {
+		opts.UserID = userid
+	}
+}
+
+// ApplyRemoveRepoReferenceOptions resolves the given options into a
+// RemoveRepoReferenceOptions struct.
+func ApplyRemoveRepoReferenceOptions(opts ...RemoveRepoReferenceOption) RemoveRepoReferenceOptions {
+	options := RemoveRepoReferenceOptions{}
+
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	return options
+}
+
 // ManifestMeta represents all data related to an image manifests (found from the image contents itself).
 type ManifestMeta struct {
 	Size     int64
@@ -290,6 +320,12 @@ type ManifestMeta struct {
 type (
 	Tag         = string
 	ImageDigest = string
+)
+
+// Tag history action values recorded in TagHistoryEntry.Action.
+const (
+	TagHistoryActionPush   = "push"
+	TagHistoryActionDelete = "delete"
 )
 
 // TagHistoryEntry records one tag-to-digest movement. Action is "push" for a

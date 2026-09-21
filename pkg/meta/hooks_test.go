@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	godigest "github.com/opencontainers/go-digest"
@@ -455,13 +456,15 @@ func TestUpdateErrors(t *testing.T) {
 		metaDB := mocks.MetaDBMock{}
 		log := log.NewTestLogger()
 
+		referrersTag := "sha256-" + strings.Repeat("a", 64)
+
 		Convey("IsReferrersTag true update", func() {
-			err := meta.OnUpdateManifest(context.Background(), "repo", "sha256-123", "digest", "media", []byte("bad"),
+			err := meta.OnUpdateManifest(context.Background(), "repo", referrersTag, "digest", "media", []byte("bad"),
 				storeController, metaDB, log)
 			So(err, ShouldBeNil)
 		})
 		Convey("IsReferrersTag true delete", func() {
-			err := meta.OnDeleteManifest("repo", "sha256-123", "digest", "media", []byte("bad"),
+			err := meta.OnDeleteManifest(context.Background(), "repo", referrersTag, "digest", "media", []byte("bad"),
 				storeController, metaDB, log)
 			So(err, ShouldBeNil)
 		})
@@ -502,7 +505,7 @@ func TestOnDeleteManifest_EmptiedRepoStopsCountingTowardsQuota(t *testing.T) {
 		So(count, ShouldEqual, 1)
 
 		So(imgStore.DeleteImageManifest(ctx, "repo", digest.String(), false), ShouldBeNil)
-		So(meta.OnDeleteManifest("repo", digest.String(), ispec.MediaTypeImageManifest, digest, body,
+		So(meta.OnDeleteManifest(context.Background(), "repo", digest.String(), ispec.MediaTypeImageManifest, digest, body,
 			storeController, metaDB, log), ShouldBeNil)
 
 		_, err = metaDB.GetRepoMeta(ctx, "repo")
@@ -543,7 +546,7 @@ func TestOnDeleteManifest_EmptiedRepoStopsCountingTowardsQuota(t *testing.T) {
 			second.ManifestDescriptor.Data, storeController, metaDB, log), ShouldBeNil)
 
 		So(imgStore.DeleteImageManifest(ctx, "repo", first.Digest().String(), false), ShouldBeNil)
-		So(meta.OnDeleteManifest("repo", first.Digest().String(), ispec.MediaTypeImageManifest, first.Digest(),
+		So(meta.OnDeleteManifest(context.Background(), "repo", first.Digest().String(), ispec.MediaTypeImageManifest, first.Digest(),
 			first.ManifestDescriptor.Data, storeController, metaDB, log), ShouldBeNil)
 
 		_, err = metaDB.GetRepoMeta(ctx, "repo")
@@ -590,7 +593,7 @@ func TestOnDeleteManifest_EmptiedRepoStopsCountingTowardsQuota(t *testing.T) {
 			untagged.Digest(), untagged.ManifestDescriptor.Data, storeController, metaDB, log), ShouldBeNil)
 
 		So(imgStore.DeleteImageManifest(ctx, "repo", tagged.Digest().String(), false), ShouldBeNil)
-		So(meta.OnDeleteManifest("repo", tagged.Digest().String(), ispec.MediaTypeImageManifest, tagged.Digest(),
+		So(meta.OnDeleteManifest(context.Background(), "repo", tagged.Digest().String(), ispec.MediaTypeImageManifest, tagged.Digest(),
 			tagged.ManifestDescriptor.Data, storeController, metaDB, log), ShouldBeNil)
 
 		// No tag is left, but the untagged manifest still holds the repo, so its
@@ -684,7 +687,7 @@ func TestOnDeleteManifest_OrphanedSignatureReferrerReleasesRepo(t *testing.T) {
 
 			// Delete the subject by digest, so only the signature referrer is left in the index.
 			So(imgStore.DeleteImageManifest(ctx, "repo", subjectDigest.String(), false), ShouldBeNil)
-			So(meta.OnDeleteManifest("repo", subjectDigest.String(), ispec.MediaTypeImageManifest, subjectDigest,
+			So(meta.OnDeleteManifest(context.Background(), "repo", subjectDigest.String(), ispec.MediaTypeImageManifest, subjectDigest,
 				subjectBody, storeController, metaDB, log), ShouldBeNil)
 
 			repoMeta, err = metaDB.GetRepoMeta(ctx, "repo")
@@ -695,7 +698,7 @@ func TestOnDeleteManifest_OrphanedSignatureReferrerReleasesRepo(t *testing.T) {
 			// meta already gone, which is expected and must not surface as an error. The repo is
 			// now empty, so both the layout and the meta record are released.
 			So(imgStore.DeleteImageManifest(ctx, "repo", referrerDigest.String(), false), ShouldBeNil)
-			So(meta.OnDeleteManifest("repo", referrerDigest.String(), ispec.MediaTypeImageManifest, referrerDigest,
+			So(meta.OnDeleteManifest(context.Background(), "repo", referrerDigest.String(), ispec.MediaTypeImageManifest, referrerDigest,
 				referrerBody, storeController, metaDB, log), ShouldBeNil)
 
 			So(imgStore.DirExists(path.Join(rootDir, "repo")), ShouldBeFalse)
@@ -742,7 +745,7 @@ func TestOnDeleteManifest_syncStagingBlocksRepoRemoval(t *testing.T) {
 		session := path.Join(rootDir, repo, syncConstants.SyncBlobUploadDir, "session-uuid")
 		So(os.MkdirAll(session, 0o755), ShouldBeNil)
 
-		So(meta.OnDeleteManifest(repo, digest.String(), ispec.MediaTypeImageManifest, digest, body,
+		So(meta.OnDeleteManifest(context.Background(), repo, digest.String(), ispec.MediaTypeImageManifest, digest, body,
 			storeController, metaDB, log), ShouldBeNil)
 
 		repos, err := imgStore.GetRepositories()
@@ -786,7 +789,7 @@ func TestOnDeleteManifest_syncStagingBlocksRepoRemoval(t *testing.T) {
 		session := path.Join(downloadDir, repo, syncConstants.SyncBlobUploadDir, "session-uuid")
 		So(os.MkdirAll(session, 0o755), ShouldBeNil)
 
-		So(meta.OnDeleteManifest(repo, digest.String(), ispec.MediaTypeImageManifest, digest, body,
+		So(meta.OnDeleteManifest(context.Background(), repo, digest.String(), ispec.MediaTypeImageManifest, digest, body,
 			storeController, metaDB, log), ShouldBeNil)
 
 		repos, err := imgStore.GetRepositories()

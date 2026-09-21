@@ -15,6 +15,7 @@ import (
 	"zotregistry.dev/zot/v2/pkg/compat"
 	"zotregistry.dev/zot/v2/pkg/log"
 	mTypes "zotregistry.dev/zot/v2/pkg/meta/types"
+	reqCtx "zotregistry.dev/zot/v2/pkg/requestcontext"
 	"zotregistry.dev/zot/v2/pkg/storage"
 	"zotregistry.dev/zot/v2/pkg/storage/gc"
 )
@@ -104,7 +105,7 @@ func rollbackDigestManifestTags(ctx context.Context, repo string, tags, appliedM
 	for i := range slices.Backward(appliedMetaTags) {
 		refTag := appliedMetaTags[i]
 
-		metaDelErr := OnDeleteManifest(repo, refTag, mediaType, digest, body, storeController, metaDB, log)
+		metaDelErr := OnDeleteManifest(ctx, repo, refTag, mediaType, digest, body, storeController, metaDB, log)
 		if metaDelErr != nil {
 			log.Error().Err(metaDelErr).Str("repository", repo).Str("tag", refTag).
 				Msg("multi-tag digest push: rollback OnDeleteManifest failed")
@@ -218,7 +219,8 @@ func OnUpdateManifestDigestTags(ctx context.Context, repo string, tags []string,
 // OnDeleteManifest is called when a manifest is deleted. It updates metadb according to the type
 // of image pushed(normal images, signatures, etc.). In case of any errors, it makes sure to keep
 // consistency between metadb and the image store.
-func OnDeleteManifest(repo, reference, mediaType string, digest godigest.Digest, manifestBlob []byte,
+func OnDeleteManifest(ctx context.Context, repo, reference, mediaType string, digest godigest.Digest,
+	manifestBlob []byte,
 	storeController storage.StoreController, metaDB mTypes.MetaDB, log log.Logger,
 ) error {
 	if zcommon.IsReferrersTag(reference) {
@@ -260,7 +262,12 @@ func OnDeleteManifest(repo, reference, mediaType string, digest godigest.Digest,
 				Msg("failed to delete signature meta")
 		}
 	} else {
-		metaErr = metaDB.RemoveRepoReference(repo, reference, digest)
+		var userid string
+		if userAc, err := reqCtx.UserAcFromContext(ctx); err == nil && userAc != nil {
+			userid = userAc.GetUsername()
+		}
+
+		metaErr = metaDB.RemoveRepoReference(repo, reference, digest, mTypes.WithActorUserID(userid))
 		if metaErr != nil {
 			log.Info().Str("component", "metadb").Msg("restoring image store")
 

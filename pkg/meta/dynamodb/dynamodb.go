@@ -1519,6 +1519,7 @@ func (dwr *DynamoDB) GetTagHistory(repo string) ([]mTypes.TagHistoryEntry, error
 }
 
 func (dwr *DynamoDB) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest,
+	_ ...mTypes.RemoveRepoReferenceOption,
 ) error {
 	ctx := context.Background()
 

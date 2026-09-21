@@ -1871,7 +1871,9 @@ func (rc *RedisDB) GetTagHistory(repo string) ([]mTypes.TagHistoryEntry, error) 
 // pointing to it.
 // If the reference is a digest then it will remove the digest from Statistics, Signatures and Referrers only
 // if there are no tags pointing to the digest, otherwise it's noop.
-func (rc *RedisDB) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest) error {
+func (rc *RedisDB) RemoveRepoReference(repo, reference string, manifestDigest godigest.Digest,
+	_ ...mTypes.RemoveRepoReferenceOption,
+) error {
 	ctx := context.Background()
 
 	err := rc.withRSLocks(ctx, []string{rc.getRepoLockKey(repo)}, func() error {

@@ -1285,7 +1285,8 @@ func TestBoltDBTagHistory(t *testing.T) {
 		So(history[0].User, ShouldEqual, "testuser")
 		So(history[1].Tag, ShouldEqual, "tag1")
 
-		err = boltdbWrapper.RemoveRepoReference("repo", "tag1", imageMeta.Digest)
+		err = boltdbWrapper.RemoveRepoReference("repo", "tag1", imageMeta.Digest,
+			mTypes.WithActorUserID("deleter"))
 		So(err, ShouldBeNil)
 
 		history, err = boltdbWrapper.GetTagHistory("repo")
@@ -1293,6 +1294,40 @@ func TestBoltDBTagHistory(t *testing.T) {
 		So(history, ShouldHaveLength, 3)
 		So(history[0].Tag, ShouldEqual, "tag1")
 		So(history[0].Action, ShouldEqual, "delete")
+		So(history[0].User, ShouldEqual, "deleter")
+
+		Convey("idempotent repush and phantom delete record nothing", func() {
+			err = boltdbWrapper.SetRepoReference(ctx, "repo", "tag2", imageMeta)
+			So(err, ShouldBeNil)
+
+			err = boltdbWrapper.RemoveRepoReference("repo", "missing-tag", imageMeta.Digest)
+			So(err, ShouldBeNil)
+
+			history, err = boltdbWrapper.GetTagHistory("repo")
+			So(err, ShouldBeNil)
+			So(history, ShouldHaveLength, 3)
+		})
+
+		Convey("repointing a tag records a push with the new digest", func() {
+			other := CreateRandomImage()
+			err = boltdbWrapper.SetRepoReference(ctx, "repo", "tag2", other.AsImageMeta())
+			So(err, ShouldBeNil)
+
+			history, err = boltdbWrapper.GetTagHistory("repo")
+			So(err, ShouldBeNil)
+			So(history, ShouldHaveLength, 4)
+			So(history[0].Action, ShouldEqual, "push")
+			So(history[0].Digest, ShouldEqual, other.DigestStr())
+		})
+
+		Convey("repo meta delete clears its history", func() {
+			err = boltdbWrapper.DeleteRepoMeta("repo")
+			So(err, ShouldBeNil)
+
+			history, err = boltdbWrapper.GetTagHistory("repo")
+			So(err, ShouldBeNil)
+			So(history, ShouldBeEmpty)
+		})
 	})
 }
 
