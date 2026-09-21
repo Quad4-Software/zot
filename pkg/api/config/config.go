@@ -852,6 +852,11 @@ type Config struct {
 	Scheduler       *SchedulerConfig `json:"scheduler" mapstructure:",omitempty"`
 	Cluster         *ClusterConfig   `json:"cluster"   mapstructure:",omitempty"`
 
+	// Landlock, when true, sandboxes the server with Linux Landlock: filesystem
+	// access is restricted to the storage roots and the files referenced by this
+	// configuration. No-op on non-Linux platforms and kernels without Landlock.
+	Landlock bool `json:"landlock,omitempty" mapstructure:"landlock,omitempty"`
+
 	// Mutex to protect concurrent access to config fields
 	mu sync.RWMutex
 }

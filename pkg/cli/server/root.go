@@ -131,6 +131,14 @@ func InitController(conf *config.Config, configPath string) (*api.Controller, *H
 
 	hotReloader.Start()
 
+	if err := applyLandlock(conf, configPath, ctlr.Log); err != nil {
+		hotReloader.Stop()
+		ctlr.Shutdown() //nolint: contextcheck
+		ctlr.Log.Error().Err(err).Msg("failed to apply landlock sandbox")
+
+		return nil, nil, err
+	}
+
 	return ctlr, hotReloader, nil
 }
 
