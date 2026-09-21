@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -286,6 +287,11 @@ func (local *PublicKeyLocalStorage) GetPublicKeys() ([]string, error) {
 
 	files, err := os.ReadDir(cosignDir)
 	if err != nil {
+		// no truststore dir means no keys installed
+		if errors.Is(err, os.ErrNotExist) {
+			return []string{}, nil
+		}
+
 		return []string{}, err
 	}
 

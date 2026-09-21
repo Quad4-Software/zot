@@ -22,6 +22,7 @@ import (
 	cvemodel "zotregistry.dev/zot/v2/pkg/extensions/search/cve/model"
 	"zotregistry.dev/zot/v2/pkg/log"
 	mTypes "zotregistry.dev/zot/v2/pkg/meta/types"
+	zreg "zotregistry.dev/zot/v2/pkg/regexp"
 	reqCtx "zotregistry.dev/zot/v2/pkg/requestcontext"
 	"zotregistry.dev/zot/v2/pkg/storage"
 	gc "zotregistry.dev/zot/v2/pkg/storage/gc"
@@ -399,7 +400,10 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
 	reference := r.URL.Query().Get("reference")
 
-	if repo == "" || reference == "" || !zcommon.CheckIsCorrectRepoNameFormat(repo) {
+	// the repo name feeds store lookups below; require the strict OCI name
+	// format, not just the loose "no : or @" check, so traversal-shaped
+	// values cannot reach blob paths
+	if repo == "" || reference == "" || !zreg.FullNameRegexp.MatchString(repo) {
 		w.WriteHeader(http.StatusBadRequest)
 
 		return
@@ -425,7 +429,13 @@ func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
 		// without triggering scans. Resolve the reference to a digest first.
 		repoMeta, metaErr := mgmt.MetaDB.GetRepoMeta(r.Context(), repo)
 		if metaErr != nil {
-			w.WriteHeader(http.StatusNotFound)
+			if errors.Is(metaErr, zerr.ErrRepoMetaNotFound) {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				mgmt.Log.Error().Err(metaErr).Str("component", "mgmt").Str("repo", repo).
+					Msg("failed to read repo meta for cached cve report")
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 
 			return
 		}
@@ -635,7 +645,7 @@ func (mgmt *Mgmt) HandleTagHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	repo := r.URL.Query().Get("repo")
-	if repo == "" || !zcommon.CheckIsCorrectRepoNameFormat(repo) {
+	if repo == "" || !zreg.FullNameRegexp.MatchString(repo) {
 		w.WriteHeader(http.StatusBadRequest)
 
 		return

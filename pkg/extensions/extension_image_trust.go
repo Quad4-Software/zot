@@ -39,7 +39,7 @@ func SetupImageTrustRoutes(conf *config.Config, router *mux.Router, metaDB mType
 
 	imgTrustStore, _ := metaDB.ImageTrustStore().(*imagetrust.ImageTrustStore)
 	trust := ImageTrust{Conf: conf, ImageTrustStore: imgTrustStore, Log: log}
-	allowedMethods := zcommon.AllowedMethods(http.MethodPost)
+	allowedMethods := zcommon.AllowedMethods(http.MethodPost, http.MethodGet)
 
 	if extensionsConfig.IsNotationEnabled() {
 		log.Info().Msg("setting up notation route")
@@ -50,7 +50,7 @@ func SetupImageTrustRoutes(conf *config.Config, router *mux.Router, metaDB mType
 		notationRouter.Use(zcommon.ACHeadersMiddleware(conf, allowedMethods...))
 		// The endpoints for uploading signatures should be available only to admins
 		notationRouter.Use(zcommon.AuthzOnlyAdminsMiddleware(conf))
-		notationRouter.Methods(allowedMethods...).HandlerFunc(trust.HandleNotationCertificateUpload)
+		notationRouter.Methods(http.MethodPost).HandlerFunc(trust.HandleNotationCertificateUpload)
 		notationRouter.Methods(http.MethodGet).HandlerFunc(trust.HandleNotationCertificateList)
 	}
 
@@ -63,7 +63,7 @@ func SetupImageTrustRoutes(conf *config.Config, router *mux.Router, metaDB mType
 		cosignRouter.Use(zcommon.ACHeadersMiddleware(conf, allowedMethods...))
 		// The endpoints for uploading signatures should be available only to admins
 		cosignRouter.Use(zcommon.AuthzOnlyAdminsMiddleware(conf))
-		cosignRouter.Methods(allowedMethods...).HandlerFunc(trust.HandleCosignPublicKeyUpload)
+		cosignRouter.Methods(http.MethodPost).HandlerFunc(trust.HandleCosignPublicKeyUpload)
 		cosignRouter.Methods(http.MethodGet).HandlerFunc(trust.HandleCosignPublicKeyList)
 	}
 
@@ -124,6 +124,12 @@ func (trust *ImageTrust) HandleCosignPublicKeyUpload(response http.ResponseWrite
 // @Failure 403 {string} string "forbidden"
 // @Failure 500 {string} string "internal server error"
 func (trust *ImageTrust) HandleCosignPublicKeyList(response http.ResponseWriter, request *http.Request) {
+	if trust.ImageTrustStore == nil {
+		response.WriteHeader(http.StatusNotImplemented)
+
+		return
+	}
+
 	keys, err := trust.ImageTrustStore.CosignStorage.GetPublicKeys()
 	if err != nil {
 		trust.Log.Error().Err(err).Str("component", "image-trust").Msg("failed to list cosign keys")
@@ -144,18 +150,27 @@ func (trust *ImageTrust) HandleCosignPublicKeyList(response http.ResponseWriter,
 // @Failure 403 {string} string "forbidden"
 // @Failure 500 {string} string "internal server error"
 func (trust *ImageTrust) HandleNotationCertificateList(response http.ResponseWriter, request *http.Request) {
-	certs := []string{}
+	if trust.ImageTrustStore == nil {
+		response.WriteHeader(http.StatusNotImplemented)
 
-	if local, ok := trust.ImageTrustStore.NotationStorage.(*imagetrust.CertificateLocalStorage); ok {
-		var err error
+		return
+	}
 
-		certs, err = local.GetCertificateNames()
-		if err != nil {
-			trust.Log.Error().Err(err).Str("component", "image-trust").Msg("failed to list notation certificates")
-			response.WriteHeader(http.StatusInternalServerError)
+	local, ok := trust.ImageTrustStore.NotationStorage.(*imagetrust.CertificateLocalStorage)
+	if !ok {
+		// cert material lives in a remote store (e.g. AWS secrets manager)
+		// that has no listing API
+		response.WriteHeader(http.StatusNotImplemented)
 
-			return
-		}
+		return
+	}
+
+	certs, err := local.GetCertificateNames()
+	if err != nil {
+		trust.Log.Error().Err(err).Str("component", "image-trust").Msg("failed to list notation certificates")
+		response.WriteHeader(http.StatusInternalServerError)
+
+		return
 	}
 
 	writeJSON(response, map[string][]string{"certificates": certs})

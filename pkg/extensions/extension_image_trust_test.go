@@ -323,7 +323,7 @@ func RunSignatureUploadAndVerificationTests(t *testing.T, cacheDriverParams map[
 
 		resp, err = client.R().Get(baseURL + constants.FullCosign)
 		So(err, ShouldBeNil)
-		So(resp.StatusCode(), ShouldEqual, http.StatusMethodNotAllowed)
+		So(resp.StatusCode(), ShouldEqual, http.StatusOK)
 
 		resp, err = client.R().Post(baseURL + constants.FullCosign)
 		So(err, ShouldBeNil)
@@ -422,7 +422,7 @@ func RunSignatureUploadAndVerificationTests(t *testing.T, cacheDriverParams map[
 
 		resp, err = client.R().Get(baseURL + constants.FullNotation)
 		So(err, ShouldBeNil)
-		So(resp.StatusCode(), ShouldEqual, http.StatusMethodNotAllowed)
+		So(resp.StatusCode(), ShouldEqual, http.StatusOK)
 
 		resp, err = client.R().Post(baseURL + constants.FullNotation)
 		So(err, ShouldBeNil)
@@ -585,7 +585,7 @@ func RunSignatureUploadAndVerificationTests(t *testing.T, cacheDriverParams map[
 
 		resp, err = client.R().Get(baseURL + constants.FullNotation)
 		So(err, ShouldBeNil)
-		So(resp.StatusCode(), ShouldEqual, http.StatusMethodNotAllowed)
+		So(resp.StatusCode(), ShouldEqual, http.StatusOK)
 
 		resp, err = client.R().Post(baseURL + constants.FullNotation)
 		So(err, ShouldBeNil)
@@ -1008,7 +1008,7 @@ func RunSignatureUploadAndVerificationTests(t *testing.T, cacheDriverParams map[
 
 		resp, err = client.R().Get(baseURL + constants.FullCosign)
 		So(err, ShouldBeNil)
-		So(resp.StatusCode(), ShouldEqual, http.StatusMethodNotAllowed)
+		So(resp.StatusCode(), ShouldEqual, http.StatusOK)
 
 		resp, err = client.R().Post(baseURL + constants.FullCosign)
 		So(err, ShouldBeNil)
