@@ -165,13 +165,21 @@ jobs:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
-      - name: Scan image for vulnerabilities
+      - name: Scan image for vulnerabilities (grype)
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           fail-build: false
           output-format: json
           output-file: grype.json
+
+      - name: Scan image for vulnerabilities (trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: json
+          output: trivy.json
+          ignore-unfixed: false
 
       - name: Attest OpenVEX
         env:
@@ -185,16 +193,25 @@ jobs:
             build/openvex.json > openvex.json
 
           # findings not covered by an authored statement are recorded as
-          # under_investigation; triage them in build/openvex.json
+          # under_investigation; status_notes records which scanner(s)
+          # reported each finding. triage them in build/openvex.json
           jq -n \
             --slurpfile vex openvex.json \
             --slurpfile grype grype.json \
+            --slurpfile trivy trivy.json \
             --arg purl "pkg:oci/zot@${IMAGE_DIGEST}?repository_url=${IMAGE_NAME}" \
             '($vex[0].statements // []) as $authored |
              ($authored | map(.vulnerability.name // .vulnerability["@id"] // .vulnerability)) as $known |
-             (($grype[0].matches // []) | map(.vulnerability.id) | unique |
-               map(select(. as $v | ($known | index($v)) == null) |
-                 {vulnerability: {name: .}, products: [$purl], status: "under_investigation"})) as $auto |
+             (($grype[0].matches // []) | map(.vulnerability.id) | unique) as $g |
+             (($trivy[0].Results // []) | map(.Vulnerabilities // []) | add // [] |
+               map(.VulnerabilityID) | unique) as $t |
+             (($g + $t) | unique |
+               map(. as $v | select(($known | index($v)) == null) |
+                 {vulnerability: {name: $v}, products: [$purl], status: "under_investigation",
+                  status_notes: ("reported by " + ([
+                    (if ($g | index($v)) != null then "grype" else empty end),
+                    (if ($t | index($v)) != null then "trivy" else empty end)
+                  ] | join(", ")))})) as $auto |
              $vex[0] | .statements = ($authored + $auto)' \
             > openvex.merged.json && mv openvex.merged.json openvex.json
 
