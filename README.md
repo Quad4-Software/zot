@@ -1,12 +1,42 @@
 # zot
-[![build](https://github.com/project-zot/zot/actions/workflows/build.yaml/badge.svg?branch=main)](https://github.com/project-zot/zot/actions/workflows/build.yaml) [![test](https://github.com/project-zot/zot/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/project-zot/zot/actions/workflows/test.yaml) [![nightly jobs](https://github.com/project-zot/zot/actions/workflows/nightly.yaml/badge.svg)](https://github.com/project-zot/zot/actions/workflows/nightly.yaml) [![codecov](https://codecov.io/gh/project-zot/zot/branch/main/graph/badge.svg?token=US6rAoFYoc)](https://codecov.io/gh/project-zot/zot) [![conformance](https://github.com/project-zot/zot/actions/workflows/oci-conformance-action.yaml/badge.svg)](https://github.com/project-zot/zot/actions/workflows/oci-conformance-action.yaml) [![CodeQL](https://github.com/project-zot/zot/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/project-zot/zot/actions/workflows/codeql-analysis.yml) [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/5425/badge)](https://bestpractices.coreinfrastructure.org/projects/5425) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/project-zot/zot/badge)](https://securityscorecards.dev/viewer/?uri=github.com/project-zot/zot) [![Go Reference](https://pkg.go.dev/badge/zotregistry.dev/zot/v2.svg)](https://pkg.go.dev/zotregistry.dev/zot/v2) [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fproject-zot%2Fzot.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fproject-zot%2Fzot?ref=badge_shield)
 
-**zot**: a production-ready vendor-neutral OCI image registry - images stored in [OCI image format](https://github.com/opencontainers/image-spec), [distribution specification](https://github.com/opencontainers/distribution-spec) on-the-wire, that's it!
+Quad4's fork of [zot](https://zotregistry.dev), a vendor-neutral OCI image registry.
 
-Documentation for `zot` is located at: [https://zotregistry.dev](https://zotregistry.dev)
+Changes from upstream:
 
-Code of conduct details are [here](CODE_OF_CONDUCT.md).
+- The web UI is vendored in `ui/` and rebuilt from source instead of fetching a
+  prebuilt zui bundle at build time.
+- Quad4 branding, dark mode by default, and a theme switcher.
+- An admin page for browsing repositories and deleting images.
+- Optional Linux Landlock filesystem sandboxing, enabled with `"landlock": true`
+  in the config (see `examples/config-landlock.json`). When enabled, the process
+  can only read and write the storage roots and the files referenced by the
+  configuration. No-op on kernels without Landlock support and on non-Linux
+  platforms.
 
+## Build
 
-## License
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fproject-zot%2Fzot.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fproject-zot%2Fzot?ref=badge_large)
+Requires Go (see `.go-version`) and Node.js 22+.
+
+```
+make binary
+```
+
+The `ui` make target runs `npm ci && npm run build` inside `ui/` and copies the
+bundle into `pkg/extensions/build/` for embedding. To reuse a prebuilt bundle
+instead, set `ZUI_BUILD_PATH`:
+
+```
+make binary ZUI_BUILD_PATH=path/to/ui/build
+```
+
+## Run
+
+```
+./bin/zot-linux-amd64 serve examples/config-minimal.json
+```
+
+The UI is served at `/home`, `/explore`, `/image`, `/user` and `/admin` when the
+`ui` extension is enabled.
+
+Upstream documentation lives at https://zotregistry.dev.
