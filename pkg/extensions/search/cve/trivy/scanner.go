@@ -1358,7 +1358,13 @@ func (scanner Scanner) DBStatus() cvemodel.ScannerDBStatus {
 	}
 
 	if len(errs) > 0 {
+		// upstream error strings carry filesystem paths; scrub the storage
+		// roots before exposing them through the management API
 		status.Error = errors.Join(errs...).Error()
+
+		for _, imgStore := range stores {
+			status.Error = strings.ReplaceAll(status.Error, imgStore.RootDir(), "<root>")
+		}
 	}
 
 	return status

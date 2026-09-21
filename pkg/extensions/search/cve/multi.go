@@ -244,6 +244,11 @@ func mergeCVEMap(dst, src map[string]zcommon.CVE) {
 			existing.Reference = cve.Reference
 		}
 
+		// existing may alias a CVE struct (and its PackageList backing array)
+		// handed out of a backend's LRU cache; clone before appending so the
+		// merge never writes into cache-owned memory
+		existing.PackageList = slices.Clone(existing.PackageList)
+
 		for _, pack := range cve.PackageList {
 			if slices.Contains(existing.PackageList, pack) {
 				continue

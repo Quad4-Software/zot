@@ -97,7 +97,35 @@ func NewScanner(storeController storage.StoreController, metaDB mTypes.MetaDB,
 	scanner.base = cvebase.NewScanner(storeController, metaDB, scannerName,
 		scanner.scanManifest, nil, log)
 
+	// sweep leftovers from crashed scans and downloads under each root
+	for _, rootDir := range scanner.roots {
+		scanner.sweepTempDirs(rootDir)
+	}
+
 	return scanner
+}
+
+// sweepTempDirs removes scan layout dirs and partial DB downloads left behind
+// by a crash. Entries not matching the known prefixes are left alone.
+func (scanner *Scanner) sweepTempDirs(rootDir string) {
+	for _, dir := range []string{
+		filepath.Join(rootDir, dbDirName, "tmp"),
+		filepath.Join(rootDir, dbDirName, "db"),
+	} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "scan-") || strings.HasPrefix(entry.Name(), "grype-db-download") {
+				if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+					scanner.log.Warn().Err(err).Str("dir", dir).Str("entry", entry.Name()).
+						Msg("failed to sweep stale grype temp dir")
+				}
+			}
+		}
+	}
 }
 
 func storeRoots(storeController storage.StoreController) []string {
@@ -140,6 +168,10 @@ func (scanner *Scanner) getProvider(rootDir string) (vulnerability.Provider, err
 
 	provider, status, err := anchoregrype.LoadVulnerabilityDB(scanner.distCfg, scanner.installCfg(rootDir), false)
 	if err != nil {
+		// record the load failure so DBStatus does not silently report an
+		// empty healthy state for this root
+		scanner.statuses[rootDir] = &vulnerability.ProviderStatus{Error: err}
+
 		return nil, err
 	}
 
@@ -182,7 +214,13 @@ func (scanner *Scanner) DBStatus() cvemodel.ScannerDBStatus {
 	}
 
 	if len(errs) > 0 {
+		// upstream error strings carry filesystem paths; scrub the storage
+		// roots before exposing them through the management API
 		status.Error = errors.Join(errs...).Error()
+
+		for _, rootDir := range scanner.roots {
+			status.Error = strings.ReplaceAll(status.Error, rootDir, "<root>")
+		}
 	}
 
 	return status
@@ -194,15 +232,22 @@ func (scanner *Scanner) UpdateDB(ctx context.Context) error {
 	scanner.dbLock.Lock()
 	defer scanner.dbLock.Unlock()
 
+	var errs []error
+
 	for _, rootDir := range scanner.roots {
 		scanner.log.Debug().Str("dbDir", rootDir).Msg("updating grype vulnerability DB")
 
 		provider, status, err := anchoregrype.LoadVulnerabilityDB(scanner.distCfg, scanner.installCfg(rootDir), true)
 		if err != nil {
+			// record the failure so DBStatus reports it instead of showing
+			// the last successful state, then keep updating other roots
 			scanner.log.Error().Err(err).Str("dbDir", rootDir).
 				Msg("failed to download grype vulnerability DB")
 
-			return err
+			scanner.statuses[rootDir] = &vulnerability.ProviderStatus{Error: err}
+			errs = append(errs, err)
+
+			continue
 		}
 
 		if old, ok := scanner.providers[rootDir]; ok {
@@ -213,9 +258,14 @@ func (scanner *Scanner) UpdateDB(ctx context.Context) error {
 		scanner.statuses[rootDir] = status
 	}
 
-	scanner.base.PurgeCache()
+	// purge per root would need digest-level bookkeeping; a failed update
+	// leaves results for that root cached, which is still correct data for
+	// the old DB, so only purge when at least one root actually swapped
+	if len(errs) < len(scanner.roots) {
+		scanner.base.PurgeCache()
+	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (scanner *Scanner) ScanImage(ctx context.Context, image string) (cvemodel.ScanResult, error) {
@@ -328,7 +378,7 @@ func (scanner *Scanner) buildLayout(imgStore storageTypes.ImageStore, repo, dige
 
 	cleanupOnErr := func() { _ = os.RemoveAll(layoutDir) }
 
-	if err := os.MkdirAll(filepath.Join(layoutDir, ispec.ImageBlobsDir, "sha256"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(layoutDir, ispec.ImageBlobsDir), 0o755); err != nil {
 		cleanupOnErr()
 
 		return "", err
@@ -339,7 +389,23 @@ func (scanner *Scanner) buildLayout(imgStore storageTypes.ImageStore, repo, dige
 	toLink := append([]godigest.Digest{manifestDigest, manifest.Config.Digest},
 		layerDigests(manifest.Layers)...)
 
+	linked := map[godigest.Digest]struct{}{}
+
 	for _, blobDigest := range toLink {
+		// descriptor digests are validated at push time, but scans can run on
+		// any digest metaDB knows about; validate before building paths
+		if err := blobDigest.Validate(); err != nil {
+			cleanupOnErr()
+
+			return "", err
+		}
+
+		if _, dup := linked[blobDigest]; dup {
+			continue
+		}
+
+		linked[blobDigest] = struct{}{}
+
 		if err := linkBlob(imgStore.BlobPath(repo, blobDigest), layoutDir, blobDigest); err != nil {
 			cleanupOnErr()
 
@@ -393,6 +459,11 @@ func layerDigests(layers []ispec.Descriptor) []godigest.Digest {
 // if the filesystem does not support hardlinks.
 func linkBlob(srcPath, layoutDir string, digest godigest.Digest) error {
 	dstPath := filepath.Join(layoutDir, ispec.ImageBlobsDir, digest.Algorithm().String(), digest.Encoded())
+
+	// create the per-algorithm dir so non-sha256 digests (legal OCI) link too
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return err
+	}
 
 	if err := os.Link(srcPath, dstPath); err == nil {
 		return nil

@@ -519,6 +519,17 @@ func (scanner *Scanner) scanIndexSeen(ctx context.Context, repo, digest string, 
 
 		manifestCveIDMap, childCached, err := scanner.scanManifest(ctx, repo, digestStr)
 		if err != nil {
+			// the blob exists but the descriptor was pruned from the repo's
+			// index.json (e.g. after an index tag was updated); treat the
+			// child like a missing blob instead of failing the whole index
+			if errors.Is(err, zerr.ErrManifestNotFound) {
+				scanner.log.Warn().Err(err).Str("repo", repo).Str("index", digest).
+					Str("manifest", digestStr).
+					Msg("skipping pruned child while scanning image index")
+
+				continue
+			}
+
 			return map[string]zcommon.CVE{}, false, err
 		}
 
