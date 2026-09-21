@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 	"sync/atomic"
 
 	"github.com/gorilla/mux"
@@ -14,6 +16,8 @@ import (
 	"zotregistry.dev/zot/v2/pkg/api/constants"
 	zcommon "zotregistry.dev/zot/v2/pkg/common"
 	"zotregistry.dev/zot/v2/pkg/extensions/monitoring"
+	cveinfo "zotregistry.dev/zot/v2/pkg/extensions/search/cve"
+	cvemodel "zotregistry.dev/zot/v2/pkg/extensions/search/cve/model"
 	"zotregistry.dev/zot/v2/pkg/log"
 	mTypes "zotregistry.dev/zot/v2/pkg/meta/types"
 	reqCtx "zotregistry.dev/zot/v2/pkg/requestcontext"
@@ -118,7 +122,8 @@ func (auth Auth) MarshalJSON() ([]byte, error) {
 }
 
 func SetupMgmtRoutes(conf *config.Config, router *mux.Router, storeController storage.StoreController,
-	metaDB mTypes.MetaDB, audit *log.Logger, metrics monitoring.MetricServer, log log.Logger,
+	metaDB mTypes.MetaDB, cveScanner CveScanner, audit *log.Logger, metrics monitoring.MetricServer,
+	log log.Logger,
 ) {
 	extensionsConfig := conf.CopyExtensionsConfig()
 	if !extensionsConfig.IsSearchEnabled() {
@@ -133,6 +138,7 @@ func SetupMgmtRoutes(conf *config.Config, router *mux.Router, storeController st
 		Conf:            conf,
 		StoreController: storeController,
 		MetaDB:          metaDB,
+		CveScanner:      cveScanner,
 		Audit:           audit,
 		Metrics:         metrics,
 		Log:             log,
@@ -145,6 +151,13 @@ func SetupMgmtRoutes(conf *config.Config, router *mux.Router, storeController st
 	gcRouter.Use(zcommon.AddExtensionSecurityHeaders())
 	gcRouter.Use(zcommon.ACHeadersMiddleware(conf, http.MethodPost))
 	gcRouter.Methods(http.MethodPost).HandlerFunc(mgmt.HandleRunGC)
+
+	// Per-scanner CVE report, admin only.
+	cveRouter := router.PathPrefix(constants.ExtMgmt + "/cve").Subrouter()
+	cveRouter.Use(zcommon.CORSHeadersMiddleware(conf.HTTP.AllowOrigin))
+	cveRouter.Use(zcommon.AddExtensionSecurityHeaders())
+	cveRouter.Use(zcommon.ACHeadersMiddleware(conf, http.MethodGet))
+	cveRouter.Methods(http.MethodGet).HandlerFunc(mgmt.HandleCVEScanReport)
 
 	// The endpoint for reading configuration should be available to all users
 	allowedMethods := zcommon.AllowedMethods(http.MethodGet)
@@ -162,6 +175,7 @@ type Mgmt struct {
 	Conf            *config.Config
 	StoreController storage.StoreController
 	MetaDB          mTypes.MetaDB
+	CveScanner      CveScanner
 	Audit           *log.Logger
 	Metrics         monitoring.MetricServer
 	Log             log.Logger
@@ -298,4 +312,151 @@ func (mgmt *Mgmt) gcStore(ctx context.Context, imgStore storageTypes.ImageStore,
 				Msg("gc failed for repository")
 		}
 	}
+}
+
+// CVEScannerFinding is one vulnerability ID as reported by a single backend.
+type CVEScannerFinding struct {
+	ID       string `json:"id"`
+	Severity string `json:"severity"`
+}
+
+// CVEScannerReport is the per-backend result for one image.
+type CVEScannerReport struct {
+	Scanned     bool                `json:"scanned"`
+	Error       string              `json:"error,omitempty"`
+	Count       int                 `json:"count"`
+	MaxSeverity string              `json:"maxSeverity"`
+	CVEs        []CVEScannerFinding `json:"cves"`
+}
+
+// CVEScanReportResponse is the response of the mgmt CVE endpoint: one entry
+// per scanner plus the findings only a single scanner reported.
+type CVEScanReportResponse struct {
+	Image    string                      `json:"image"`
+	Scanners map[string]CVEScannerReport `json:"scanners"`
+	OnlyIn   map[string][]string         `json:"onlyIn"`
+	Common   []string                    `json:"common"`
+}
+
+// HandleCVEScanReport godoc
+// @Summary Per-scanner CVE report for an image
+// @Description Scans an image with every enabled CVE backend and reports
+// per-scanner findings and disagreements. Admin users only.
+// @Router  /v2/_zot/ext/mgmt/cve [get]
+// @Param   repo          query     string   true   "repository name"
+// @Param   reference     query     string   true   "tag or digest"
+// @Success 200 {object}  extensions.CVEScanReportResponse
+// @Failure 400 {string}  string "bad request"
+// @Failure 403 {string}  string "forbidden"
+// @Failure 501 {string}  string "cve scanning not enabled"
+func (mgmt *Mgmt) HandleCVEScanReport(w http.ResponseWriter, r *http.Request) {
+	userAc, err := reqCtx.UserAcFromContext(r.Context())
+	if err != nil || userAc == nil || !userAc.IsAdmin() {
+		w.WriteHeader(http.StatusForbidden)
+
+		return
+	}
+
+	repo := r.URL.Query().Get("repo")
+	reference := r.URL.Query().Get("reference")
+
+	if repo == "" || reference == "" || !zcommon.CheckIsCorrectRepoNameFormat(repo) {
+		w.WriteHeader(http.StatusBadRequest)
+
+		return
+	}
+
+	reporter, ok := mgmt.CveScanner.(cveinfo.PerScannerReporter)
+	if !ok || reporter == nil {
+		w.WriteHeader(http.StatusNotImplemented)
+
+		return
+	}
+
+	image := zcommon.GetFullImageName(repo, reference)
+
+	results, errs := reporter.ScanPerScanner(r.Context(), image)
+
+	response := CVEScanReportResponse{
+		Image:    image,
+		Scanners: map[string]CVEScannerReport{},
+		OnlyIn:   map[string][]string{},
+		Common:   []string{},
+	}
+
+	idSets := map[string]map[string]struct{}{}
+
+	for _, name := range reporter.ScannerNames() {
+		report := CVEScannerReport{CVEs: []CVEScannerFinding{}}
+		idSets[name] = map[string]struct{}{}
+
+		if scanErr, failed := errs[name]; failed {
+			report.Error = scanErr.Error()
+			response.Scanners[name] = report
+
+			continue
+		}
+
+		result, found := results[name]
+		if !found {
+			report.Error = "no result"
+
+			response.Scanners[name] = report
+
+			continue
+		}
+
+		report.Scanned = true
+		report.Count = len(result.CVEMap)
+
+		for id, cve := range result.CVEMap {
+			report.CVEs = append(report.CVEs, CVEScannerFinding{ID: id, Severity: cve.Severity})
+			idSets[name][id] = struct{}{}
+
+			if cvemodel.CompareSeverities(report.MaxSeverity, cve.Severity) > 0 {
+				report.MaxSeverity = cve.Severity
+			}
+		}
+
+		slices.SortFunc(report.CVEs, func(a, b CVEScannerFinding) int { return strings.Compare(a.ID, b.ID) })
+
+		response.Scanners[name] = report
+	}
+
+	seen := map[string]int{}
+
+	for _, ids := range idSets {
+		for id := range ids {
+			seen[id]++
+		}
+	}
+
+	for name, ids := range idSets {
+		for id := range ids {
+			if seen[id] == 1 {
+				response.OnlyIn[name] = append(response.OnlyIn[name], id)
+			}
+		}
+
+		slices.Sort(response.OnlyIn[name])
+	}
+
+	for id, count := range seen {
+		if count > 1 {
+			response.Common = append(response.Common, id)
+		}
+	}
+
+	slices.Sort(response.Common)
+
+	buf, err := json.Marshal(response)
+	if err != nil {
+		mgmt.Log.Error().Err(err).Str("component", "mgmt").Msg("failed to marshal cve report response")
+		w.WriteHeader(http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(buf)
 }

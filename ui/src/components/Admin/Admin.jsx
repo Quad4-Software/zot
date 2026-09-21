@@ -39,6 +39,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LabelIcon from '@mui/icons-material/Label';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import BugReportIcon from '@mui/icons-material/BugReport';
 import DeleteTag from 'components/Shared/DeleteTag';
 import Loading from 'components/Shared/Loading';
 
@@ -204,6 +205,123 @@ function LabelsButton({ repo, tag }) {
   );
 }
 
+function ScannerReportButton({ repo, tag }) {
+  const classes = useStyles();
+  const [open, setOpen] = useState(false);
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    setReport(null);
+    setError(null);
+    setOpen(true);
+
+    api
+      .get(`${host()}${endpoints.cveScanReport(repo, tag)}`)
+      .then((response) => setReport(response.data))
+      .catch((err) => {
+        console.error(err);
+        const status = err?.response?.status;
+        setError(
+          status === 403
+            ? 'admin access required'
+            : status === 501
+              ? 'cve scanning is not enabled on this server'
+              : 'failed to load scan report'
+        );
+      });
+  };
+
+  const scannerNames = report ? Object.keys(report.scanners || {}) : [];
+  const onlyIn = report?.onlyIn || {};
+  const common = report?.common || [];
+  const hasDisagreement = Object.values(onlyIn).some((ids) => !isEmpty(ids));
+
+  return (
+    <>
+      <Tooltip title="Per-scanner CVE report">
+        <IconButton className={classes.icons} size="small" onClick={load} data-testid={`scan-report-${tag}`}>
+          <BugReportIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          {repo}:{tag} scan report
+        </DialogTitle>
+        <DialogContent>
+          {error && <Typography className={classes.errorText}>{error}</Typography>}
+          {!error && report === null && <Loading />}
+          {!error && report !== null && (
+            <>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell className={classes.tableHeadCell}>Scanner</TableCell>
+                    <TableCell className={classes.tableHeadCell}>Status</TableCell>
+                    <TableCell className={classes.tableHeadCell}>CVEs</TableCell>
+                    <TableCell className={classes.tableHeadCell}>Max severity</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {scannerNames.map((name) => {
+                    const r = report.scanners[name];
+                    return (
+                      <TableRow key={name} className={classes.tagRow}>
+                        <TableCell className={classes.tableCell}>{name}</TableCell>
+                        <TableCell className={classes.tableCell}>
+                          {r.scanned ? 'scanned' : r.error || 'no result'}
+                        </TableCell>
+                        <TableCell className={classes.tableCell}>{r.scanned ? r.count : '-'}</TableCell>
+                        <TableCell className={classes.tableCell}>
+                          {r.scanned && r.maxSeverity ? (
+                            <VulnerabilityChipCheck vulnerabilitySeverity={r.maxSeverity} />
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className={classes.infoGrid} style={{ marginTop: '1rem' }}>
+                <Chip label={`${common.length} reported by all scanners`} variant="outlined" />
+                {hasDisagreement ? (
+                  scannerNames
+                    .filter((name) => !isEmpty(onlyIn[name]))
+                    .map((name) => (
+                      <Chip
+                        key={name}
+                        color="warning"
+                        variant="outlined"
+                        label={`${onlyIn[name].length} only in ${name}`}
+                      />
+                    ))
+                ) : (
+                  <Chip label="no disagreements" variant="outlined" />
+                )}
+              </div>
+              {hasDisagreement &&
+                scannerNames
+                  .filter((name) => !isEmpty(onlyIn[name]))
+                  .map((name) => (
+                    <div key={name} style={{ marginTop: '1rem' }}>
+                      <Typography className={classes.cardTitle}>Only in {name}</Typography>
+                      <div className={classes.infoGrid}>
+                        {onlyIn[name].map((id) => (
+                          <Chip key={id} label={id} size="small" variant="outlined" />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function TagRows({ repo }) {
   const classes = useStyles();
   const [images, setImages] = useState(null);
@@ -271,6 +389,7 @@ function TagRows({ repo }) {
       </TableCell>
       <TableCell className={classes.tableCell} align="right">
         <LabelsButton repo={repo} tag={image.Tag} />
+        <ScannerReportButton repo={repo} tag={image.Tag} />
         {image.IsDeletable && (
           <DeleteTag
             repo={repo}

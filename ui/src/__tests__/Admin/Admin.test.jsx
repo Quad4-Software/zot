@@ -115,4 +115,47 @@ describe('Admin page', () => {
     await waitFor(() => expect(screen.getByText('org.opencontainers.image.title')).toBeInTheDocument());
     expect(screen.getByText('org.opencontainers.image.vendor')).toBeInTheDocument();
   });
+
+  it('shows the per-scanner scan report with disagreements', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/mgmt/cve'))
+        return Promise.resolve({
+          data: {
+            image: 'alpine:latest',
+            scanners: {
+              trivy: {
+                scanned: true,
+                count: 1,
+                maxSeverity: 'CRITICAL',
+                cves: [{ id: 'CVE-2021-36159', severity: 'CRITICAL' }]
+              },
+              grype: {
+                scanned: true,
+                count: 2,
+                maxSeverity: 'HIGH',
+                cves: [
+                  { id: 'CVE-2021-36159', severity: 'HIGH' },
+                  { id: 'CVE-2021-42374', severity: 'MEDIUM' }
+                ]
+              }
+            },
+            onlyIn: { grype: ['CVE-2021-42374'] },
+            common: ['CVE-2021-36159']
+          }
+        });
+      if (url.includes('_zot/ext/mgmt')) return Promise.resolve({ data: mockServerInfo });
+      if (url.includes('ExpandedRepoInfo')) return Promise.resolve({ data: { data: mockRepoDetail } });
+      return Promise.resolve({ data: { data: mockRepoList } });
+    });
+    render(<AdminWrapper />);
+    await waitFor(() => expect(screen.getByText('alpine')).toBeInTheDocument());
+    screen.getByTestId('expand-alpine').click();
+    await waitFor(() => expect(screen.getByTestId('scan-report-latest')).toBeInTheDocument());
+    screen.getByTestId('scan-report-latest').click();
+    await waitFor(() => expect(screen.getByText('alpine:latest scan report')).toBeInTheDocument());
+    expect(screen.getByText('1 reported by all scanners')).toBeInTheDocument();
+    expect(screen.getByText('1 only in grype')).toBeInTheDocument();
+    expect(screen.getByText('Only in grype')).toBeInTheDocument();
+    expect(screen.getByText('CVE-2021-42374')).toBeInTheDocument();
+  });
 });

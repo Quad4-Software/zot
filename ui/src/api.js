@@ -82,6 +82,8 @@ const endpoints = {
   status: `/v2/`,
   authConfig: `/v2/_zot/ext/mgmt`,
   runGC: `/v2/_zot/ext/mgmt/gc`,
+  cveScanReport: (repo, reference) =>
+    `/v2/_zot/ext/mgmt/cve?repo=${encodeURIComponent(repo)}&reference=${encodeURIComponent(reference)}`,
   openidAuth: `/zot/auth/login`,
   logout: `/zot/auth/logout`,
   apiKeys: '/zot/auth/apikey',

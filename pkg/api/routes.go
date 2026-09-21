@@ -230,7 +230,7 @@ func (rh *RouteHandler) SetupRoutes() {
 		rh.c.Log)
 	ext.SetupImageTrustRoutes(rh.c.Config, prefixedRouter, rh.c.MetaDB, rh.c.Log)
 	ext.SetupMgmtRoutes(rh.c.Config, prefixedRouter, rh.c.StoreController, rh.c.MetaDB,
-		rh.c.Audit, rh.c.Metrics, rh.c.Log)
+		rh.c.CveScanner, rh.c.Audit, rh.c.Metrics, rh.c.Log)
 	ext.SetupUserPreferencesRoutes(rh.c.Config, prefixedRouter, rh.c.MetaDB, rh.c.Log)
 	setupQuotaMiddleware(rh.c.Config, prefixedDistSpecRouter, rh.c.MetaDB, rh.c.Log)
 	// last should always be UI because it will setup a http.FileServer and paths will be resolved by this FileServer.

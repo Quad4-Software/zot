@@ -17,7 +17,8 @@ func IsBuiltWithMGMTExtension() bool {
 }
 
 func SetupMgmtRoutes(config *config.Config, router *mux.Router, storeController storage.StoreController,
-	metaDB mTypes.MetaDB, audit *log.Logger, metrics monitoring.MetricServer, log log.Logger,
+	metaDB mTypes.MetaDB, cveScanner CveScanner, audit *log.Logger, metrics monitoring.MetricServer,
+	log log.Logger,
 ) {
 	log.Warn().Msg("skipping setting up mgmt routes because given zot binary doesn't include this feature," +
 		"please build a binary that does so")
