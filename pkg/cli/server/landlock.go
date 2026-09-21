@@ -115,10 +115,43 @@ func collectLandlockPaths(conf *config.Config, configPath string) landlockPaths 
 
 	p.addExtensionPaths(conf)
 
+	p.addRegistryAuthFiles()
+
 	// temp space for multipart handling and libraries that use os.TempDir
 	p.addRWDir(os.TempDir())
 
 	return p
+}
+
+// addRegistryAuthFiles grants read access to existing docker/containers
+// credential files. Sync and the trivy CVE scanner use containers/image
+// auth resolution which stats these locations; denying an existing file
+// fails downloads outright, while a missing file is handled gracefully.
+func (p *landlockPaths) addRegistryAuthFiles() {
+	candidates := []string{}
+
+	for _, env := range []struct{ key, rel string }{
+		{"DOCKER_CONFIG", "config.json"},
+		{"XDG_RUNTIME_DIR", "containers/auth.json"},
+		{"XDG_CONFIG_HOME", "containers/auth.json"},
+	} {
+		if dir := os.Getenv(env.key); dir != "" {
+			candidates = append(candidates, filepath.Join(dir, env.rel))
+		}
+	}
+
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".docker", "config.json"),
+			filepath.Join(home, ".config", "containers", "auth.json"),
+		)
+	}
+
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			p.addROFile(candidate)
+		}
+	}
 }
 
 func (p *landlockPaths) addExtensionPaths(conf *config.Config) {
