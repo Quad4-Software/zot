@@ -681,8 +681,9 @@ $(KIND): | check-linux
 	curl -fsSL https://kind.sigs.k8s.io/dl/$(KIND_VERSION)/kind-$(OS)-$(ARCH) -o $@; \
 	chmod +x $@
 
-# UI sources are vendored in ./ui and built with npm. Set ZUI_BUILD_PATH to
-# reuse a prebuilt UI bundle instead of compiling from source.
+# UI sources are vendored in ./ui and built with pnpm (pinned via the
+# packageManager field, see ui/package.json). Set ZUI_BUILD_PATH to reuse a
+# prebuilt UI bundle instead of compiling from source.
 .PHONY: ui
 ui:
 	echo $(BUILD_LABELS);\
@@ -691,7 +692,7 @@ ui:
 		cp -R "$(ZUI_BUILD_PATH)" ./pkg/extensions/;\
 		exit 0;\
 	fi;\
-	cd ui && npm ci && npm run build && cd ..;\
+	cd ui && corepack pnpm install --frozen-lockfile && corepack pnpm run build && cd ..;\
 	rm -rf ./pkg/extensions/build;\
 	cp -R ./ui/build ./pkg/extensions/;\
 

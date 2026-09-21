@@ -22,8 +22,8 @@ Requires Go (see `.go-version`) and Node.js 22+.
 make binary
 ```
 
-The `ui` make target runs `npm ci && npm run build` inside `ui/` and copies the
-bundle into `pkg/extensions/build/` for embedding. To reuse a prebuilt bundle
+The `ui` make target runs `pnpm install --frozen-lockfile && pnpm build` inside
+`ui/` and copies the bundle into `pkg/extensions/build/` for embedding. To reuse a prebuilt bundle
 instead, set `ZUI_BUILD_PATH`:
 
 ```

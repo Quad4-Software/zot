@@ -1,0 +1,26 @@
+# Supply chain policy for the vendored registry UI.
+# See https://pnpm.io/supply-chain-security
+
+# Do not resolve versions published less than a day ago; compromised
+# packages are usually pulled from the registry within hours.
+minimumReleaseAge: 1440
+
+# All transitive deps must resolve from the registry, never from git
+# URLs, direct tarballs or other exotic sources.
+blockExoticSubdeps: true
+
+# Refuse packages whose trust level dropped versus previous releases
+# (for example provenance or trusted-publisher status removed).
+# Packages published more than a year ago predate registry provenance
+# and are exempt.
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 525600
+
+# Dependency lifecycle scripts (postinstall and friends) do not run
+# unless the package is explicitly listed here.
+allowBuilds:
+  esbuild: true
+
+# Fail installs if a dependency requests a build script that is not
+# listed in allowBuilds, instead of silently skipping it.
+strictDepBuilds: true

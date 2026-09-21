@@ -52,9 +52,13 @@ jobs:
 
       - name: Build UI
         working-directory: ui
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
         run: |
-          npm ci --no-audit --no-fund
-          npm run build
+          corepack enable pnpm
+          corepack install
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Build binaries
         env:
