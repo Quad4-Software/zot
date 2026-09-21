@@ -1,9 +1,10 @@
 # ---
 # Packages a prebuilt zot binary (make binary GOOS=linux GOARCH=<arch>) into a
-# distroless static image running as the nonroot user. OCI labels are set from
-# build args so CI can stamp version, revision and build time at publish.
+# distroless base-nossl image running as the nonroot user. The binary is PIE,
+# so the static variant cannot be used. OCI labels are set from build args so
+# CI can stamp version, revision and build time at publish.
 # ---
-ARG BASE_IMAGE=gcr.io/distroless/static-debian13@sha256:58133991db06659feaabe0f4e97a35cebf15ef4ea08f8a4c6d2ee5f75e4aa6a0
+ARG BASE_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:af5cb8dd589b8520b8c06bebb9efb73d7e16406cab58e85c51761fff49d370a0
 
 # ---
 # Stage 1: pre-create the data dir owned by the nonroot user. distroless has no
@@ -36,7 +37,7 @@ LABEL org.opencontainers.image.title="quad4-zot" \
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.licenses="Apache-2.0"
 
-COPY --from=dirs /dirs/var/lib/registry /var/lib/registry
+COPY --from=dirs --chown=65532:65532 /dirs/var/lib/registry /var/lib/registry
 COPY build/config.json /etc/zot/config.json
 COPY bin/zot-${TARGETOS}-${TARGETARCH} /usr/bin/zot
 
