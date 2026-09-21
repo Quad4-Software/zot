@@ -76,7 +76,8 @@ const SBOM_TYPES = ['application/vnd.syft+json', 'application/spdx+json', 'appli
 const classifyReferrer = (artifactType, mediaType, annotations) => {
   const types = [artifactType, mediaType].filter(Boolean).join(' ');
   const predicateType = annotations?.find((a) => a.key === 'dev.cosignproject.cosign/predicateType')?.value || '';
-  if (SIGNATURE_TYPES.some((t) => types.includes(t))) return { label: 'Signature', color: 'success' };
+  // content kinds first: a cosign-attested VEX or SBOM is a sigstore bundle
+  // carrying that predicate, and VEX/SBOM is the more informative label
   if (VEX_TYPES.some((t) => types.includes(t)) || predicateType.includes('openvex'))
     return { label: 'VEX', color: 'info' };
   if (
@@ -85,6 +86,7 @@ const classifyReferrer = (artifactType, mediaType, annotations) => {
     predicateType.includes('cyclonedx')
   )
     return { label: 'SBOM', color: 'info' };
+  if (SIGNATURE_TYPES.some((t) => types.includes(t))) return { label: 'Signature', color: 'success' };
   if (predicateType) return { label: 'Attestation', color: 'warning' };
   return { label: 'Artifact', color: 'default' };
 };

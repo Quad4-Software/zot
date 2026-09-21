@@ -1,5 +1,5 @@
 // react global
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // utility
 import { api, endpoints } from '../../../api';
@@ -130,11 +130,13 @@ function CompareTags({ name, tag }) {
   const [onlyInOther, setOnlyInOther] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [compareFailed, setCompareFailed] = useState(false);
-  const abortController = useMemo(() => new AbortController(), []);
+  const abortRef = useRef(new AbortController());
 
   useEffect(() => {
+    abortRef.current = new AbortController();
+
     api
-      .get(`${host()}${endpoints.detailedRepoInfo(name)}`, abortController.signal)
+      .get(`${host()}${endpoints.detailedRepoInfo(name)}`, abortRef.current.signal)
       .then((response) => {
         if (response.data && response.data.data) {
           const images = response.data.data.ExpandedRepoInfo?.Images || [];
@@ -145,7 +147,7 @@ function CompareTags({ name, tag }) {
         if (e.name !== 'CanceledError') console.error(e);
       });
     return () => {
-      abortController.abort();
+      abortRef.current.abort();
     };
   }, [name, tag]);
 
@@ -153,7 +155,7 @@ function CompareTags({ name, tag }) {
     api
       .get(
         `${host()}${endpoints.cveDiffForImages({ repo: name, tag: minuendTag }, { repo: name, tag: subtrahendTag })}`,
-        abortController.signal
+        abortRef.current.signal
       )
       .then((response) => {
         if (response.data && response.data.data) {
