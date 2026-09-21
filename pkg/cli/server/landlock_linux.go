@@ -25,7 +25,9 @@ func applyLandlock(conf *config.Config, configPath string, log zlog.Logger) erro
 	rules := []landlock.Rule{
 		landlock.RODirs(systemRODirs...).IgnoreIfMissing(),
 		landlock.RODirs(paths.roDirs...).IgnoreIfMissing(),
-		landlock.RWDirs(paths.rwDirs...).IgnoreIfMissing(),
+		// WithRefer: blob uploads and dedupe rename files between directories
+		// under the storage root, which needs the refer right on ABI v2+.
+		landlock.RWDirs(paths.rwDirs...).IgnoreIfMissing().WithRefer(),
 		landlock.ROFiles(paths.roFiles...).IgnoreIfMissing(),
 		landlock.RWFiles(paths.rwFiles...).IgnoreIfMissing(),
 		landlock.RWFiles("/dev/null"),
