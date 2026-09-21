@@ -120,7 +120,12 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            org.opencontainers.image.title=quad4-zot
+            org.opencontainers.image.description=Quad4's OCI registry, a zot fork
+            org.opencontainers.image.vendor=Quad4
+            org.opencontainers.image.url=https://quad4.io
+            org.opencontainers.image.licenses=Apache-2.0
           provenance: mode=max
           sbom: true
           build-args: |
