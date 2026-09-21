@@ -1,0 +1,10 @@
+**/.git
+**/.svn
+**/.hg
+**/node_modules
+**/.github
+README.md
+LICENSE
+Makefile
+**/coverage
+**/build

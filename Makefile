@@ -26,10 +26,7 @@ CRICTL := $(TOOLSDIR)/bin/crictl
 CRICTL_VERSION := v1.26.1
 ACTION_VALIDATOR := $(TOOLSDIR)/bin/action-validator
 ACTION_VALIDATOR_VERSION := v0.5.3
-ZUI_BUILD_PATH := ""
-ZUI_VERSION := commit-a7feb46
-ZUI_REPO_OWNER := project-zot
-ZUI_REPO_NAME := zui
+ZUI_BUILD_PATH ?=
 SWAGGER_VERSION := v1.16.6
 STACKER := $(TOOLSDIR)/bin/stacker
 STACKER_VERSION := v1.1.0-rc3
@@ -684,7 +681,8 @@ $(KIND): | check-linux
 	curl -fsSL https://kind.sigs.k8s.io/dl/$(KIND_VERSION)/kind-$(OS)-$(ARCH) -o $@; \
 	chmod +x $@
 
-# set ZUI_VERSION to empty string in order to clone zui locally and build default branch
+# UI sources are vendored in ./ui and built with npm. Set ZUI_BUILD_PATH to
+# reuse a prebuilt UI bundle instead of compiling from source.
 .PHONY: ui
 ui:
 	echo $(BUILD_LABELS);\
@@ -693,37 +691,9 @@ ui:
 		cp -R "$(ZUI_BUILD_PATH)" ./pkg/extensions/;\
 		exit 0;\
 	fi;\
-	if [ -z "$(ZUI_VERSION)" ]; then\
-		pwd=$$(pwd);\
-		tdir=$$(mktemp -d);\
-		cd $$tdir;\
-		git clone https://github.com/$(ZUI_REPO_OWNER)/$(ZUI_REPO_NAME).git zui;\
-		cd zui;\
-		npm install;\
-		npm run build;\
-		cd $$pwd;\
-		rm -rf ./pkg/extensions/build;\
-		cp -R $$tdir/zui/build ./pkg/extensions/;\
-	else\
-		curl --fail --head https://github.com/$(ZUI_REPO_OWNER)/$(ZUI_REPO_NAME)/releases/download/$(ZUI_VERSION)/zui.tgz;\
-		if [ $$? -ne 0 ]; then\
-			pwd=$$(pwd);\
-			tdir=$$(mktemp -d);\
-			cd $$tdir;\
-			git clone --depth=1 --branch "$(ZUI_VERSION)" https://github.com/$(ZUI_REPO_OWNER)/$(ZUI_REPO_NAME).git zui;\
-			cd zui;\
-			git checkout "$(ZUI_VERSION)";\
-			npm install;\
-			npm run build;\
-			cd $$pwd;\
-			rm -rf ./pkg/extensions/build;\
-			cp -R $$tdir/zui/build ./pkg/extensions/;\
-		else\
-			curl -fsSL https://github.com/$(ZUI_REPO_OWNER)/$(ZUI_REPO_NAME)/releases/download/$(ZUI_VERSION)/zui.tgz -o zui.tgz;\
-			tar xvzf zui.tgz -C ./pkg/extensions/;\
-			rm zui.tgz;\
-		fi;\
-	fi;\
+	cd ui && npm ci && npm run build && cd ..;\
+	rm -rf ./pkg/extensions/build;\
+	cp -R ./ui/build ./pkg/extensions/;\
 
 .PHONY: check-linux
 check-linux:

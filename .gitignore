@@ -13,6 +13,7 @@
 
 # Output of the UI build
 pkg/extensions/build/
+ui/build/
 
 # Tooling used for blackbox testing
 hack/

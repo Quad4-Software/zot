@@ -1,0 +1,199 @@
+import { mapToImage, mapToManifest, mapToRepo, mapToRepoFromRepoInfo } from '../objectModels';
+
+describe('objectModels', () => {
+  describe('mapToImage', () => {
+    it('should map TaggedTimestamp to lastTagged', () => {
+      const responseImage = {
+        RepoName: 'test-repo',
+        Tag: 'latest',
+        TaggedTimestamp: '2020-12-10T00:22:52.526672082Z',
+        LastUpdated: '2020-12-08T00:22:52.526672082Z',
+        Digest: 'sha256:123',
+        Manifests: [],
+        Referrers: [],
+        Size: '1000',
+        DownloadCount: 10,
+        StarCount: 5,
+        Description: 'Test description',
+        IsSigned: false,
+        SignatureInfo: [],
+        Licenses: 'MIT',
+        Labels: [],
+        Title: 'Test Title',
+        Source: 'https://example.com',
+        Documentation: 'Test docs',
+        Vendor: 'Test Vendor',
+        Authors: [],
+        ArtifactType: 'application/vnd.acme.rocket.config',
+        Vulnerabilities: { MaxSeverity: 'NONE', Count: 0 },
+        IsDeletable: true
+      };
+
+      const result = mapToImage(responseImage);
+
+      expect(result.lastTagged).toBe('2020-12-10T00:22:52.526672082Z');
+      expect(result.repoName).toBe('test-repo');
+      expect(result.tag).toBe('latest');
+      expect(result.artifactType).toBe('application/vnd.acme.rocket.config');
+      expect(result.lastUpdated).toBe('2020-12-08T00:22:52.526672082Z');
+      expect(result.digest).toBe('sha256:123');
+    });
+
+    it('should handle missing TaggedTimestamp', () => {
+      const responseImage = {
+        RepoName: 'test-repo',
+        Tag: 'latest',
+        LastUpdated: '2020-12-08T00:22:52.526672082Z',
+        Manifests: [],
+        Referrers: [],
+        Size: '1000',
+        DownloadCount: 10,
+        StarCount: 5,
+        Description: 'Test description',
+        IsSigned: false,
+        SignatureInfo: [],
+        Licenses: 'MIT',
+        Labels: [],
+        Title: 'Test Title',
+        Source: 'https://example.com',
+        Documentation: 'Test docs',
+        Vendor: 'Test Vendor',
+        Authors: [],
+        Vulnerabilities: { MaxSeverity: 'NONE', Count: 0 },
+        IsDeletable: true
+      };
+
+      const result = mapToImage(responseImage);
+
+      expect(result.lastTagged).toBeUndefined();
+      expect(result.repoName).toBe('test-repo');
+    });
+  });
+
+  describe('mapToRepo', () => {
+    it('should be NewestImage.Digest', () => {
+      const repo = {
+        NewestImage: {
+          Digest: 'newest-digest'
+        }
+      };
+      const result = mapToRepo(repo);
+      expect(result.digest).toBe('newest-digest');
+    });
+  });
+
+  describe('mapToRepoFromRepoInfo', () => {
+    it('should be NewestImage.Digest', () => {
+      const repoInfo = {
+        Summary: {
+          NewestImage: {
+            Digest: 'newest-digest'
+          }
+        }
+      };
+      const result = mapToRepoFromRepoInfo(repoInfo);
+      expect(result.digest).toBe('newest-digest');
+    });
+  });
+
+  describe('mapToManifest', () => {
+    it('should map manifest data correctly', () => {
+      const responseManifest = {
+        Digest: 'sha256:abc123',
+        ConfigDigest: 'sha256:def456',
+        LastUpdated: '2020-12-08T00:22:52.526672082Z',
+        Size: '75183423',
+        Platform: {
+          Os: 'linux',
+          Arch: 'amd64'
+        },
+        DownloadCount: 10,
+        StarCount: 5,
+        Layers: [],
+        History: [],
+        Vulnerabilities: { MaxSeverity: 'NONE', Count: 0 },
+        Referrers: []
+      };
+
+      const result = mapToManifest(responseManifest);
+
+      expect(result.digest).toBe('sha256:abc123');
+      expect(result.configDigest).toBe('sha256:def456');
+      expect(result.lastUpdated).toBe('2020-12-08T00:22:52.526672082Z');
+      expect(result.size).toBe('75183423');
+      expect(result.platform).toEqual({ Os: 'linux', Arch: 'amd64' });
+      // Verify lastTagged is not included in manifest mapping
+      expect(result.lastTagged).toBeUndefined();
+    });
+
+    it('should default layers to an empty array when missing', () => {
+      const responseManifest = {
+        Digest: 'sha256:abc123',
+        ConfigDigest: 'sha256:def456',
+        LastUpdated: '2020-12-08T00:22:52.526672082Z',
+        Size: '75183423',
+        Platform: {
+          Os: 'linux',
+          Arch: 'amd64'
+        },
+        DownloadCount: 10,
+        StarCount: 5,
+        History: [],
+        Vulnerabilities: { MaxSeverity: 'NONE', Count: 0 },
+        Referrers: []
+      };
+
+      const result = mapToManifest(responseManifest);
+
+      expect(result.layers).toEqual([]);
+    });
+
+    it('should map layer details and default annotations to an empty array', () => {
+      const responseManifest = {
+        Digest: 'sha256:abc123',
+        ConfigDigest: 'sha256:def456',
+        LastUpdated: '2020-12-08T00:22:52.526672082Z',
+        Size: '75183423',
+        Platform: {
+          Os: 'linux',
+          Arch: 'amd64'
+        },
+        DownloadCount: 10,
+        StarCount: 5,
+        Layers: [
+          {
+            MediaType: 'application/vnd.oci.image.layer.v1.tar+gzip',
+            Size: 12345,
+            Digest: 'sha256:layer1'
+          },
+          {
+            MediaType: 'application/vnd.oci.image.layer.v1.tar+gzip',
+            Size: 67890,
+            Digest: 'sha256:layer2',
+            Annotations: [{ Key: 'org.opencontainers.image.title', Value: 'layer2.tar.gz' }]
+          }
+        ],
+        History: [],
+        Vulnerabilities: { MaxSeverity: 'NONE', Count: 0 },
+        Referrers: []
+      };
+
+      const result = mapToManifest(responseManifest);
+
+      expect(result.layers).toEqual([
+        {
+          mediaType: 'application/vnd.oci.image.layer.v1.tar+gzip',
+          size: 12345,
+          digest: 'sha256:layer1',
+          annotations: []
+        },
+        {
+          mediaType: 'application/vnd.oci.image.layer.v1.tar+gzip',
+          size: 67890,
+          digest: 'sha256:layer2',
+          annotations: [{ key: 'org.opencontainers.image.title', value: 'layer2.tar.gz' }]
+        }
+      ]);
+    });
+  });
+});

@@ -1,0 +1,80 @@
+# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests
+
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    name: Build zui
+    env:
+      CI: ""
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: ["24.x"]
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 2
+
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Build app
+      run: npm run build
+
+    - name: Package app
+      run: tar -czvf /tmp/zui.tgz ./build
+
+    - name: Publish artifacts on releases
+      if: github.event_name == 'release' && github.event.action == 'published'
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # latest
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: /tmp/zui.tgz
+        tag: ${{ github.ref }}
+        overwrite: true
+
+    - name: Generate commit sha
+      if: github.ref_name == 'main'
+      uses: benjlevesque/short-sha@v2.1
+      # This creates and environment variable SHA containing the short commit ID
+
+    - name: Create new tag for builds on main branch
+      if: github.ref_name == 'main'
+      uses: mathieudutour/github-tag-action@v6.1
+      with:
+        custom_tag: commit-${{ env.SHA }}
+        tag_prefix: ""
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish artifact for builds on main branch
+      if: github.ref_name == 'main'
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # latest
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: /tmp/zui.tgz
+        tag: commit-${{ env.SHA }}
+        prerelease: true  # Mark as prerelease and avoid triggering another workflow for the new tag
+        overwrite: true

@@ -1,0 +1,26 @@
+{
+  "distSpecVersion": "1.1.1",
+  "storage": {
+    "rootDirectory": "/tmp/zot"
+  },
+  "http": {
+    "address": "0.0.0.0",
+    "port": "8080",
+    "readTimeout": "10m",
+    "writeTimeout": "10m"
+  },
+  "log": {
+    "level": "debug",
+    "output": "tests/zot-server.log"
+  },
+  "extensions": {
+    "search": {
+      "cve": {
+        "updateInterval": "2h"
+      }
+    },
+    "ui": {
+      "enable": true
+    }
+  }
+}

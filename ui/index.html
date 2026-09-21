@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="dark" style="background-color: #0a0a0b">
+  <head>
+    <meta charset="utf-8" />
+    <base href="/" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+      default-src 'none';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline';
+      font-src 'self';
+      connect-src 'self';
+      img-src 'self' data:;
+      manifest-src 'self';
+      base-uri 'self'"
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="description" content="Quad4 OCI-native container image registry" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Quad4 Registry</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>

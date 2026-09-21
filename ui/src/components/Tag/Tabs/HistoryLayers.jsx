@@ -1,0 +1,81 @@
+import React, { useEffect, useMemo, useState } from 'react';
+
+// components
+import { Stack, Typography } from '@mui/material';
+import LayerCard from '../../Shared/LayerCard.jsx';
+import ArtifactFileCard from '../../Shared/ArtifactFileCard.jsx';
+import { makeStyles } from 'theme';
+import Loading from '../../Shared/Loading';
+
+const useStyles = makeStyles((theme) => ({
+  title: {
+    marginBottom: '1.7rem',
+    color: 'rgba(0, 0, 0, 0.87)',
+    fontSize: '1.5rem',
+    fontWeight: '600'
+  },
+  none: {
+    color: theme.palette.text.secondary,
+    fontSize: '1.4rem',
+    fontWeight: '600'
+  }
+}));
+
+function HistoryLayers(props) {
+  const classes = useStyles();
+  const [historyData, setHistoryData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const abortController = useMemo(() => new AbortController(), []);
+  const { name, history, layers, isArtifact: isArtifactProp } = props;
+  const isArtifact = typeof isArtifactProp === 'boolean' ? isArtifactProp : Boolean(props.artifactType);
+
+  useEffect(() => {
+    setHistoryData(history);
+    setIsLoading(false);
+    return () => {
+      abortController.abort();
+    };
+  }, [name, history]);
+
+  return (
+    <>
+      <Typography variant="h4" gutterBottom component="div" align="left" className={classes.title}>
+        Layers
+      </Typography>
+      {isLoading ? (
+        <Loading />
+      ) : isArtifact ? (
+        <Stack direction="column" spacing={2} sx={{ marginTop: '1.7rem' }} data-testid="artifact-files-container">
+          {layers?.length > 0 ? (
+            layers.map((layer, index) => <ArtifactFileCard key={`${layer?.digest}${index}`} layer={layer} />)
+          ) : (
+            <div>
+              <Typography className={classes.none}> No artifact files available </Typography>
+            </div>
+          )}
+        </Stack>
+      ) : (
+        <Stack direction="column" spacing={2} sx={{ marginTop: '1.7rem' }} data-testid="layer-card-container">
+          {historyData?.length > 0 ? (
+            historyData.map((layer, index) => {
+              return (
+                <LayerCard
+                  key={`${layer?.Layer?.Size}${index}`}
+                  index={index + 1}
+                  layer={layer?.Layer}
+                  historyDescription={layer?.HistoryDescription}
+                />
+              );
+            })
+          ) : (
+            <div>
+              <Typography className={classes.none}> No Layer data available </Typography>
+            </div>
+          )}
+        </Stack>
+      )}
+    </>
+  );
+}
+
+export default HistoryLayers;
