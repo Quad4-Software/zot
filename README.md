@@ -36,6 +36,12 @@ make binary ZUI_BUILD_PATH=path/to/ui/build
 ./bin/zot-linux-amd64 serve examples/config-minimal.json
 ```
 
+Or use the container image, signed keyless with cosign:
+
+```
+docker run -p 5000:5000 ghcr.io/quad4-software/zot:latest
+```
+
 The UI is served at `/home`, `/explore`, `/image`, `/user` and `/admin` when the
 `ui` extension is enabled.
 
