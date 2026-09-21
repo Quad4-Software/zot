@@ -39,7 +39,7 @@ LABEL org.opencontainers.image.title="quad4-zot" \
 
 COPY --from=dirs --chown=65532:65532 /dirs/var/lib/registry /var/lib/registry
 COPY build/config.json /etc/zot/config.json
-COPY bin/zot-${TARGETOS}-${TARGETARCH} /usr/bin/zot
+COPY --chmod=755 bin/zot-${TARGETOS}-${TARGETARCH} /usr/bin/zot
 
 USER 65532:65532
 EXPOSE 5000
