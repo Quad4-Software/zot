@@ -1,10 +1,13 @@
 package image_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"testing"
 
 	docker "github.com/distribution/distribution/v3/manifest/schema2"
+	"github.com/klauspost/compress/zstd"
 	godigest "github.com/opencontainers/go-digest"
 	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 	. "github.com/smartystreets/goconvey/convey"
@@ -137,6 +140,33 @@ func TestImageBuilder(t *testing.T) {
 		So(image.Manifest.Subject, ShouldResemble, &subject)
 		So(image.Manifest.ArtifactType, ShouldResemble, "art.type")
 		So(image.Manifest.Annotations, ShouldResemble, map[string]string{"key": "val"})
+	})
+}
+
+func TestZstdLayerBuilder(t *testing.T) {
+	Convey("ZstdLayers", t, func() {
+		image := CreateImageWith().
+			ZstdLayers(2, 128).
+			DefaultConfig().
+			Build()
+
+		So(len(image.Layers), ShouldEqual, 2)
+		So(len(image.Manifest.Layers), ShouldEqual, 2)
+
+		for i, layer := range image.Manifest.Layers {
+			So(layer.MediaType, ShouldEqual, ispec.MediaTypeImageLayerZstd)
+			So(layer.Digest, ShouldResemble, godigest.FromBytes(image.Layers[i]))
+			So(layer.Size, ShouldEqual, len(image.Layers[i]))
+
+			// the blob must decode as a valid zstd stream
+			decoder, err := zstd.NewReader(bytes.NewReader(image.Layers[i]))
+			So(err, ShouldBeNil)
+
+			decoded, err := io.ReadAll(decoder)
+			So(err, ShouldBeNil)
+			So(len(decoded), ShouldBeGreaterThan, 0)
+			decoder.Close()
+		}
 	})
 }
 

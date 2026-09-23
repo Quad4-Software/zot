@@ -1,6 +1,8 @@
 package image
 
 import (
+	"archive/tar"
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	godigest "github.com/opencontainers/go-digest"
 	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -57,6 +60,54 @@ func GetLayerRelativeToProjectRoot(pathToLayerBlob string) ([]byte, error) {
 	}
 
 	return layer, nil
+}
+
+// GetZstdLayerBlob returns a tar archive holding size random bytes, compressed
+// with zstd, like clients produce for layers carrying media type
+// application/vnd.oci.image.layer.v1.tar+zstd.
+func GetZstdLayerBlob(size int) ([]byte, error) {
+	payload := make([]byte, size)
+
+	if _, err := rand.Read(payload); err != nil {
+		return nil, err
+	}
+
+	var tarBuf bytes.Buffer
+
+	tarWriter := tar.NewWriter(&tarBuf)
+
+	if err := tarWriter.WriteHeader(&tar.Header{
+		Name: "layer-content",
+		Mode: 0o600,
+		Size: int64(len(payload)),
+	}); err != nil {
+		return nil, err
+	}
+
+	if _, err := tarWriter.Write(payload); err != nil {
+		return nil, err
+	}
+
+	if err := tarWriter.Close(); err != nil {
+		return nil, err
+	}
+
+	var zstdBuf bytes.Buffer
+
+	zstdWriter, err := zstd.NewWriter(&zstdBuf)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := zstdWriter.Write(tarBuf.Bytes()); err != nil {
+		return nil, err
+	}
+
+	if err := zstdWriter.Close(); err != nil {
+		return nil, err
+	}
+
+	return zstdBuf.Bytes(), nil
 }
 
 func GetDefaultLayers() []Layer {

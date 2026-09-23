@@ -30,6 +30,9 @@ type LayerBuilder interface {
 	// RandomLayers generates `count` layers with the given size and initialises them with random values
 	// and a default zipped layer media type.
 	RandomLayers(count, size int) ConfigBuilder
+	// ZstdLayers generates `count` layers of the given size, each a tar archive compressed with
+	// zstd, labeled with the OCI zstd layer media type.
+	ZstdLayers(count, size int) ConfigBuilder
 	// EmptyLayer adds a single empty json layer semnifying no layers.
 	EmptyLayer() ConfigBuilder
 	// DefaultLayers adds predefined default layers.
@@ -328,6 +331,23 @@ func (ib *BaseImageBuilder) RandomLayers(count, size int) ConfigBuilder {
 		ib.layers = append(ib.layers, Layer{
 			Blob:      layer,
 			MediaType: ispec.MediaTypeImageLayerGzip,
+			Digest:    ib.digestAlgorithm.FromBytes(layer),
+		})
+	}
+
+	return ib
+}
+
+func (ib *BaseImageBuilder) ZstdLayers(count, size int) ConfigBuilder {
+	for range count {
+		layer, err := GetZstdLayerBlob(size)
+		if err != nil {
+			panic("unexpected error while creating zstd layer: " + err.Error())
+		}
+
+		ib.layers = append(ib.layers, Layer{
+			Blob:      layer,
+			MediaType: ispec.MediaTypeImageLayerZstd,
 			Digest:    ib.digestAlgorithm.FromBytes(layer),
 		})
 	}

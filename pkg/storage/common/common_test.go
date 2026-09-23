@@ -183,6 +183,99 @@ func TestValidateManifest(t *testing.T) {
 			So(err, ShouldBeNil)
 		})
 
+		Convey("manifest with zstd-compressed layers", func() {
+			zstdLayer, err := GetZstdLayerBlob(256)
+			So(err, ShouldBeNil)
+
+			zstdDigest := godigest.FromBytes(zstdLayer)
+
+			_, blen, err := imgStore.FullBlobUpload(context.Background(), "test",
+				bytes.NewReader(zstdLayer), zstdDigest)
+			So(err, ShouldBeNil)
+			So(blen, ShouldEqual, len(zstdLayer))
+
+			manifest := ispec.Manifest{
+				Config: ispec.Descriptor{
+					MediaType: ispec.MediaTypeImageConfig,
+					Digest:    cdigest,
+					Size:      int64(len(cblob)),
+				},
+				Layers: []ispec.Descriptor{
+					{
+						MediaType: ispec.MediaTypeImageLayerZstd,
+						Digest:    zstdDigest,
+						Size:      int64(len(zstdLayer)),
+					},
+				},
+
+				SchemaVersion: 2,
+			}
+
+			body, err := json.Marshal(manifest)
+			So(err, ShouldBeNil)
+
+			_, _, err = imgStore.PutImageManifest(context.Background(), "test", "1.0",
+				ispec.MediaTypeImageManifest, body, nil)
+			So(err, ShouldBeNil)
+		})
+
+		Convey("manifest with non-distributable zstd layers", func() {
+			content := []byte("this zstd blob doesn't exist")
+			digest := godigest.FromBytes(content)
+			So(digest, ShouldNotBeNil)
+
+			manifest := ispec.Manifest{
+				Config: ispec.Descriptor{
+					MediaType: ispec.MediaTypeImageConfig,
+					Digest:    cdigest,
+					Size:      int64(len(cblob)),
+				},
+				Layers: []ispec.Descriptor{
+					{
+						MediaType: ispec.MediaTypeImageLayerNonDistributableZstd, //nolint:staticcheck
+						Digest:    digest,
+						Size:      int64(len(content)),
+					},
+				},
+
+				SchemaVersion: 2,
+			}
+
+			body, err := json.Marshal(manifest)
+			So(err, ShouldBeNil)
+
+			_, _, err = imgStore.PutImageManifest(context.Background(), "test", "1.0", ispec.MediaTypeImageManifest, body, nil)
+			So(err, ShouldBeNil)
+		})
+
+		Convey("manifest with missing zstd layer blob is rejected", func() {
+			digest := godigest.FromString("missing-zstd-layer")
+
+			manifest := ispec.Manifest{
+				Config: ispec.Descriptor{
+					MediaType: ispec.MediaTypeImageConfig,
+					Digest:    cdigest,
+					Size:      int64(len(cblob)),
+				},
+				Layers: []ispec.Descriptor{
+					{
+						MediaType: ispec.MediaTypeImageLayerZstd,
+						Digest:    digest,
+						Size:      10,
+					},
+				},
+
+				SchemaVersion: 2,
+			}
+
+			body, err := json.Marshal(manifest)
+			So(err, ShouldBeNil)
+
+			_, _, err = imgStore.PutImageManifest(context.Background(), "test", "1.0", ispec.MediaTypeImageManifest, body, nil)
+			So(err, ShouldNotBeNil)
+			So(errors.Is(err, zerr.ErrBadManifest), ShouldBeTrue)
+		})
+
 		Convey("manifest with empty layers should not error", func() {
 			manifest := ispec.Manifest{
 				Config: ispec.Descriptor{

@@ -162,6 +162,68 @@ function helper_push_image() {
     helper_assert_repo_has_tag "${image_name}" "${tag}"
 }
 
+# Args: $1 = image_name, $2 = tag, $3 = source reference
+function helper_push_image_zstd() {
+    local image_name=${1}
+    local tag=${2}
+    local source_ref=${3}
+    local zot_port
+    zot_port=$(get_zot_port)
+
+    run skopeo --insecure-policy copy --format=oci --dest-compress-format zstd \
+        --dest-tls-verify=false \
+        "${source_ref}" \
+        "docker://127.0.0.1:${zot_port}/${image_name}:${tag}"
+    [ "${status}" -eq 0 ]
+
+    helper_assert_catalog_has_repo "${image_name}"
+    helper_assert_repo_has_tag "${image_name}" "${tag}"
+
+    # the stored manifest must keep the zstd layer media types
+    run skopeo inspect --tls-verify=false --raw \
+        "docker://127.0.0.1:${zot_port}/${image_name}:${tag}"
+    [ "${status}" -eq 0 ]
+
+    local manifest="${output}"
+    local child_digest
+    child_digest=$(echo "${manifest}" | jq -r '.manifests[0].digest // empty')
+
+    # resolve through the image index when the push produced one
+    if [ -n "${child_digest}" ]; then
+        run curl -fsSL -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+            "http://127.0.0.1:${zot_port}/v2/${image_name}/manifests/${child_digest}"
+        [ "${status}" -eq 0 ]
+        manifest="${output}"
+    fi
+
+    [ "$(echo "${manifest}" | jq '[.layers[].mediaType] | all(. == "application/vnd.oci.image.layer.v1.tar+zstd")')" = true ]
+}
+
+# Args: $1 = image_name, $2 = tag
+function helper_pull_image_zstd() {
+    local image_name=${1}
+    local tag=${2}
+    local oci_data_dir=${BATS_FILE_TMPDIR}/oci
+    local zot_port
+    zot_port=$(get_zot_port)
+
+    run skopeo --insecure-policy copy --src-tls-verify=false \
+        "docker://127.0.0.1:${zot_port}/${image_name}:${tag}" \
+        "oci:${oci_data_dir}/${image_name}-zstd:${tag}"
+    [ "${status}" -eq 0 ]
+
+    local manifest_digest manifest_file layer_digest layer_file
+    manifest_digest=$(jq -r '.manifests[0].digest' "${oci_data_dir}/${image_name}-zstd/index.json" | cut -d: -f2)
+    manifest_file="${oci_data_dir}/${image_name}-zstd/blobs/sha256/${manifest_digest}"
+
+    [ "$(jq '[.layers[].mediaType] | all(. == "application/vnd.oci.image.layer.v1.tar+zstd")' "${manifest_file}")" = true ]
+
+    # the pulled blob must still carry the zstd frame magic number
+    layer_digest=$(jq -r '.layers[0].digest' "${manifest_file}" | cut -d: -f2)
+    layer_file="${oci_data_dir}/${image_name}-zstd/blobs/sha256/${layer_digest}"
+    [ "$(od -An -tx1 -N4 "${layer_file}" | tr -d ' \n')" = "28b52ffd" ]
+}
+
 # Args: $1 = image_name, $2 = tag
 function helper_pull_image() {
     local image_name=${1}

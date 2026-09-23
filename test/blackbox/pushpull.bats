@@ -28,6 +28,14 @@ function teardown_file() {
     helper_pull_image golang 1.20
 }
 
+@test "push image with zstd-compressed layers" {
+    helper_push_image_zstd golang-zstd 1.20 oci:${TEST_DATA_DIR}/golang:1.20
+}
+
+@test "pull image with zstd-compressed layers" {
+    helper_pull_image_zstd golang-zstd 1.20
+}
+
 @test "push image index" {
     helper_push_image_index docker://public.ecr.aws/docker/library/busybox:latest busybox latest
 }
